@@ -1,0 +1,21 @@
+# Gyre & Gimble — level 2
+#
+# Rings are listed outer (ring3) to inner (ring0). Each has 12 cells,
+# position 0 at the top, going clockwise.
+#   .  stone
+#   -  tunnel with no openings
+#   i  opens inward      o  opens outward      c  opens clockwise
+# The entry gap is above ring3 position 0; the burrow is inside ring0.
+
+#
+# gimbal: DRIVER > FOLLOWER +|-   turning DRIVER also turns its neighbor
+# FOLLOWER the same (+) or opposite (-) way. Not the other way round.
+
+ring3: oc i  .  .  .  oc c  i  .  .  .  .
+ring2: ic o  .  .  .  .  oi .  .  oc i  .
+ring1: oc c  c  i  .  .  .  .  oi .  .  .
+ring0: .  .  .  oc i  .  .  .  .  oi .  .
+
+gimbal: 3 > 2 +
+
+start: 3 10 3 5

@@ -23,8 +23,10 @@ $(PRG): $(SOURCES) $(GEN_INC) | $(BUILD)
 $(BOARD) $(BUILD)/regions.inc &: tools/genrings.py | $(BUILD)
 	$(PYTHON) tools/genrings.py $(BOARD) $(BUILD)/regions.inc
 
-$(BUILD)/level.inc: tools/level.py levels/level01.txt | $(BUILD)
-	$(PYTHON) tools/level.py levels/level01.txt $@
+LEVELS  := $(sort $(wildcard levels/*.txt))
+
+$(BUILD)/level.inc: tools/level.py $(LEVELS) | $(BUILD)
+	$(PYTHON) tools/level.py build $@ $(LEVELS)
 
 $(BUILD):
 	mkdir -p $@

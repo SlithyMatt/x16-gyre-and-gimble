@@ -27,6 +27,9 @@ C_LIT           = 3
 C_WALL          = 4
 C_BURROW        = 5
 C_HOME          = 6
+C_FOLLOW        = 7             ; stone of a ring the selection drags along
+C_COUNTER       = 8             ; ... or drags the opposite way
+C_BRASS         = 9             ; gimbal gear teeth
 
 ; CRT title-safe text area (10% margins on 40x30); keep all text inside it
 SAFE_L          = 4
@@ -39,12 +42,14 @@ KEY_DOWN        = $11
 KEY_LEFT        = $9d
 KEY_RIGHT       = $1d
 KEY_DEL         = $14
+KEY_RETURN      = $0d
 
 .assert REG_RGATE = REG_BODY + NCELLS, error, "palette regions must be contiguous"
 .assert REG_AGATE = REG_RGATE + NCELLS, error, "palette regions must be contiguous"
 .assert REG_ENTRY = REG_AGATE + NCELLS, error, "palette regions must be contiguous"
 .assert REG_BURROW = REG_ENTRY + 1, error, "palette regions must be contiguous"
 .assert REG_WALL = REG_BURROW + 1, error, "palette regions must be contiguous"
+.assert REG_TEETH = REG_WALL + 1, error, "palette regions must be contiguous"
 
 .macro print_at row, col, str
     ldx #row
@@ -57,6 +62,10 @@ KEY_DEL         = $14
     sta ZP_PTR+1
     jsr print_str
 .endmacro
+
+.segment "RODATA"
+
+.include "level.inc"
 
 .segment "CODE"
 
@@ -83,6 +92,7 @@ start:
     beq :-
     jmp quit
 @go:
+    stz level
     jsr reset_level
     ; fall through
 
@@ -95,14 +105,29 @@ main_loop:
     cmp #$db
     bcs :+
     and #$7f
-:   cmp #KEY_UP
+:   jsr handle_key
+    bcc main_loop
+    ; fall through
+
+quit:
+    lda saved_mode
+    clc
+    jsr SCREEN_MODE
+    lda #$8e                    ; back to upper/graphics charset
+    jsr CHROUT
+    lda #$93
+    jmp CHROUT
+
+; Act on key A. Carry set to quit.
+handle_key:
+    cmp #KEY_UP
     beq @up
     cmp #'w'
     bne :+
 @up:
     lda sel
     cmp #RINGS-1
-    beq main_loop
+    beq @ignore
     inc sel
     bra @redraw
 :   cmp #KEY_DOWN
@@ -111,7 +136,7 @@ main_loop:
     bne :+
 @down:
     lda sel
-    beq main_loop
+    beq @ignore
     dec sel
     bra @redraw
 :   cmp #KEY_LEFT
@@ -133,31 +158,51 @@ main_loop:
     cmp #KEY_DEL
     beq @undo
     cmp #'r'
-    bne :+
-    jsr reset_level
-    bra main_loop
-:   cmp #'q'
-    beq quit
-    bra main_loop
+    beq @reset
+    cmp #KEY_RETURN
+    beq @advance
+    cmp #'n'
+    beq @next
+    cmp #'p'
+    beq @prev
+    cmp #'q'
+    beq @quit
+@ignore:
+    clc
+    rts
+@quit:
+    sec
+    rts
 @turn:
     ldx won
-    bne main_loop
+    bne @ignore
     jsr do_move
 @redraw:
     jsr refresh
-    bra main_loop
+    clc
+    rts
 @undo:
     jsr undo_move
     bra @redraw
-
-quit:
-    lda saved_mode
+@advance:
+    lda won
+    beq @ignore
+@next:
+    lda level
+    inc a
+    cmp #NLEVELS
+    bcs @ignore
+    bra @goto
+@prev:
+    lda level
+    beq @ignore
+    dec a
+@goto:
+    sta level
+@reset:
+    jsr reset_level
     clc
-    jsr SCREEN_MODE
-    lda #$8e                    ; back to upper/graphics charset
-    jsr CHROUT
-    lda #$93
-    jmp CHROUT
+    rts
 
 ; Load the board bitmap into VRAM $00000. Carry set on error.
 load_board:
@@ -174,9 +219,20 @@ load_board:
     ldy #0
     jmp LOAD
 
+; Copy the current level's record into lvl and start it
 reset_level:
+    ldx level
+    lda level_lo,x
+    sta ZP_PTR
+    lda level_hi,x
+    sta ZP_PTR+1
+    ldy #LEVEL_SIZE-1
+:   lda (ZP_PTR),y
+    sta lvl,y
+    dey
+    bpl :-
     ldx #RINGS-1
-:   lda level_start,x
+:   lda lvl+LV_START,x
     sta off,x
     dex
     bpl :-
@@ -205,12 +261,11 @@ rotate:
 :   sta off,x
     rts
 
-; Turn the selected ring by A and record the move
+; Turn the selected ring (and its gimbal followers) by A, recording the move
 do_move:
-    ldx sel
-    pha
-    jsr rotate
-    pla
+    sta move_dir
+    jsr turn_sel
+    lda move_dir
     and #$80                    ; history: ring | $80 if counter-clockwise
     ora sel
     ldy hist_n
@@ -238,11 +293,37 @@ undo_move:
     lda #$ff
     bra :++
 :   lda #1
-:   jsr rotate
+:   sta move_dir
+    jsr turn_sel
     lda moves
     beq @done
     dec moves
 @done:
+    rts
+
+; Turn ring sel by move_dir, along with every ring its gimbals drag.
+; Must match Level.turn in tools/level.py.
+turn_sel:
+    ldx sel
+    lda lvl+LV_SAME,x
+    sta tmp_same
+    lda lvl+LV_OPP,x
+    sta tmp_opp
+    ldx #0
+@ring:
+    lsr tmp_same
+    bcc :+
+    lda move_dir
+    jsr rotate
+:   lsr tmp_opp
+    bcc :+
+    lda move_dir
+    eor #$ff
+    inc a
+    jsr rotate
+:   inx
+    cpx #RINGS
+    bne @ring
     rts
 
 ; scr[r*12+p] = cell shown at screen position p of ring r
@@ -267,7 +348,7 @@ compute_scr:
     clc
     adc tmp_i
     tax
-    lda level_cells,x
+    lda lvl+LV_CELLS,x
     sta scr,y
     iny
     inc tmp_i
@@ -415,6 +496,28 @@ update_palette:
     lda #^(VRAM_PALETTE + REG_BODY * 2) | VERA_INC_1
     sta VERA_ADDR_H
 
+    ldx sel                     ; stone color per ring: selected, dragged, or plain
+    lda lvl+LV_SAME,x
+    sta tmp_same
+    lda lvl+LV_OPP,x
+    sta tmp_opp
+    ldx #0
+@ring:
+    lda #C_STONE
+    lsr tmp_opp
+    bcc :+
+    lda #C_COUNTER
+:   lsr tmp_same
+    bcc :+
+    lda #C_FOLLOW
+:   sta ring_stone,x
+    inx
+    cpx #RINGS
+    bne @ring
+    ldx sel
+    lda #C_STONE_SEL
+    sta ring_stone,x
+
     ldx #0
 @body:
     lda scr,x
@@ -422,12 +525,8 @@ update_palette:
     jsr open_color
     bra @body_put
 @stone:
-    lda ring_of,x
-    cmp sel
-    bne :+
-    lda #C_STONE_SEL
-    bra @body_put
-:   lda #C_STONE
+    ldy ring_of,x
+    lda ring_stone,y
 @body_put:
     jsr put_color
     inx
@@ -486,7 +585,19 @@ update_palette:
 :   jsr put_color
 
     lda #C_WALL
-    jmp put_color
+    jsr put_color
+
+    ldx #0                      ; gear teeth between rings x and x+1
+@teeth:
+    lda #C_WALL
+    ldy lvl+LV_TEETH,x
+    beq :+
+    lda #C_BRASS
+:   jsr put_color
+    inx
+    cpx #RINGS-1
+    bne @teeth
+    rts
 
 ; A = color for an open tunnel at cell X (lit if reachable)
 open_color:
@@ -516,8 +627,12 @@ draw_hud:
     print_at SAFE_T+1, SAFE_L, s_title2
     print_at SAFE_T, SAFE_R-8, s_moves
     print_at SAFE_T+1, SAFE_R-8, s_par
-    lda #LEVEL_PAR
+    lda lvl+LV_PAR
     jsr print_dec3
+    print_at SAFE_T+3, SAFE_L, s_level
+    lda level
+    inc a
+    jsr print_dec2
     print_at SAFE_B-3, SAFE_L, s_help1
     print_at SAFE_B-2, SAFE_L, s_help2
     print_at SAFE_B-1, SAFE_L, s_help3
@@ -536,9 +651,20 @@ draw_status:
     beq :+
     print_at SAFE_T+2, SAFE_R-7, s_home1
     print_at SAFE_T+3, SAFE_R-7, s_home2
+    lda level
+    cmp #NLEVELS-1
+    bcs @last
+    print_at SAFE_B-2, SAFE_R-7, s_next1
+    print_at SAFE_B-1, SAFE_R-7, s_next2
+    rts
+@last:
+    print_at SAFE_B-2, SAFE_R-7, s_end1
+    print_at SAFE_B-1, SAFE_R-7, s_end2
     rts
 :   print_at SAFE_T+2, SAFE_R-7, s_blank
     print_at SAFE_T+3, SAFE_R-7, s_blank
+    print_at SAFE_B-2, SAFE_R-7, s_blank
+    print_at SAFE_B-1, SAFE_R-7, s_blank
     rts
 
 ; Print the zero-terminated string at (ZP_PTR)
@@ -564,6 +690,10 @@ print_dec3:
     ora #'0'
     jsr CHROUT
     pla
+    ; fall through
+
+; Print A (0-99) as two decimal digits at the cursor
+print_dec2:
     ldx #0
 :   cmp #10
     bcc :+
@@ -580,8 +710,6 @@ print_dec3:
 
 .segment "RODATA"
 
-.include "level.inc"
-
 .macro rgb r, g, b
     .byte (g << 4) | b, r
 .endmacro
@@ -596,6 +724,9 @@ colors:
     rgb  4,  5,  6              ; C_WALL         5
     rgb  1,  4,  2              ; C_BURROW       3
     rgb 15, 15, 13              ; C_HOME        15
+    rgb  6, 10, 14              ; C_FOLLOW       9  (hue differs: large areas)
+    rgb 14,  6, 12              ; C_COUNTER      9
+    rgb 12,  9,  3              ; C_BRASS        9  (dashed teeth vs. wall 5)
 
 ring_base:
     .byte 0, CELLS, 2*CELLS, 3*CELLS
@@ -625,12 +756,23 @@ s_help4:        .byte "R reset", 0
 s_help5:        .byte "Q quit", 0
 s_home1:        .byte "The tove", 0
 s_home2:        .byte "is home!", 0
+s_next1:        .byte "  Return", 0
+s_next2:        .byte "for next", 0
+s_end1:         .byte "The wabe", 0
+s_end2:         .byte "is clear", 0
+s_level:        .byte "Level ", 0
 s_blank:        .byte "        ", 0
 s_load_failed:  .byte "Can't load RINGS.BIN", 0
 
 .segment "BSS"
 
 saved_mode:     .res 1
+level:          .res 1
+lvl:            .res LEVEL_SIZE     ; current level record (see tools/level.py)
+move_dir:       .res 1
+tmp_same:       .res 1
+tmp_opp:        .res 1
+ring_stone:     .res RINGS
 off:            .res RINGS
 scr:            .res NCELLS
 vis:            .res NCELLS

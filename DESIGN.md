@@ -30,9 +30,12 @@ its way home along that path.
 
 ## Planned twists (introduced level by level)
 
-1. **Gimbals:** rings geared together, so turning one also turns its partner,
-   possibly the opposite way or at a different ratio. This is where the
-   "Gimble" half of the name pays off.
+1. **Gimbals** *(implemented, levels 2–3)*: neighboring rings geared together. Turning the
+   driver also turns the follower, the same way (`+`) or the opposite way
+   (`-`), but turning the follower alone leaves the driver still. Gimbals
+   can chain (3→2→1). The gap shows brass gear teeth, and selecting a ring
+   tints the rings it will drag. This is where the "Gimble" half of the
+   name pays off. *Later:* gear ratios other than 1:1.
 2. **Locked rings:** these can't be turned until the tove passes a key cell.
 3. **Borogoves:** hazards sitting in cells that block a path until they're
    rotated out of the way.

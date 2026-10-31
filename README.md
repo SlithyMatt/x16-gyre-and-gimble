@@ -29,15 +29,21 @@ The game loads `RINGS.BIN` from the current device, so keep it next to `GYRE.PRG
 | Left / Right, A / D | Rotate the selected ring counter-clockwise / clockwise |
 | U or Del | Undo |
 | R | Restart the level |
+| Return | Next level (after solving) |
+| N / P | Skip to the next / previous level (for testing) |
 | Q | Quit to BASIC |
+
+Rings joined by brass gear teeth are linked by a **gimbal**: turning the
+driving ring also turns the next one. When you select a ring, any ring it
+will drag is tinted blue-grey (same direction) or mauve (opposite).
 
 ## Layout
 
 - `src/`: 65C02 assembly (`main.asm` is the entry point)
 - `tools/genrings.py`: generates the board bitmap and its palette-region constants
-- `tools/level.py`: compiles a level, checks that it's solvable and computes par.
-  `--suggest N` finds starting rotations with par N, and `--keys` prints a
-  solution as keystrokes.
+- `tools/level.py`: compiles the levels, checks that each is solvable and
+  computes par. `suggest LEVEL N` finds starting rotations with par N, and
+  `keys LEVEL` prints a shortest solution as keystrokes.
 - `levels/`: level sources (the format is documented in `level01.txt`)
 - `build/`: build output (ignored by git)
 

@@ -6,6 +6,9 @@
 #   -  tunnel with no openings
 #   i  opens inward      o  opens outward      c  opens clockwise
 # The entry gap is above ring3 position 0; the burrow is inside ring0.
+#
+# Optional gimbals (see level02.txt):
+#   gimbal: DRIVER > FOLLOWER +|-
 
 ring3: oc c  i  .  .  .  oi .  .  c  oc i
 ring2: .  .  oc c  c  i  .  i  .  oc i  .

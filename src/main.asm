@@ -44,6 +44,11 @@ KEY_RIGHT       = $1d
 KEY_DEL         = $14
 KEY_RETURN      = $0d
 
+; SNES pads: frames before a held D-pad direction repeats, then between repeats
+JOY_DELAY       = 18
+JOY_RATE        = 8
+JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
+
 .assert REG_RGATE = REG_BODY + NCELLS, error, "palette regions must be contiguous"
 .assert REG_AGATE = REG_RGATE + NCELLS, error, "palette regions must be contiguous"
 .assert REG_ENTRY = REG_AGATE + NCELLS, error, "palette regions must be contiguous"
@@ -93,21 +98,32 @@ start:
     jmp quit
 @go:
     stz level
+    stz joy0_prev
+    stz joy1_prev
+.ifdef JOY_SCRIPT
+    stz joy_script_ptr+1
+.endif
     jsr reset_level
     ; fall through
 
 main_loop:
     jsr GETIN
     cmp #0
-    beq main_loop
+    beq @frame
     cmp #$c1                    ; fold shifted letters (caps lock) to unshifted
     bcc :+
     cmp #$db
     bcs :+
     and #$7f
 :   jsr handle_key
-    bcc main_loop
-    ; fall through
+    bcs quit
+@frame:
+    jsr RDTIM                   ; poll the pads once per jiffy (frame)
+    cmp last_jiffy
+    beq main_loop
+    sta last_jiffy
+    jsr poll_joy
+    bra main_loop
 
 quit:
     lda saved_mode
@@ -203,6 +219,139 @@ handle_key:
     jsr reset_level
     clc
     rts
+
+;
+; SNES controllers
+;
+; Pads 1-4 are merged and their new presses translated into the same key
+; codes as the keyboard, so handle_key is the only place game input is
+; handled. Pad 0 (the keyboard joystick) is skipped: GETIN already sees
+; those keys. A held D-pad direction repeats.
+
+poll_joy:
+    stz joy0                    ; pressed buttons, 1 = down
+    stz joy1
+    lda #1
+    sta joy_pad
+@pad:
+    lda joy_pad
+.ifdef JOY_SCRIPT
+    jsr script_joy
+.else
+    jsr JOYSTICK_GET
+.endif
+    cpy #0
+    bne @absent
+    eor #$ff
+    ora joy0
+    sta joy0
+    txa
+    eor #$ff
+    and #$f0                    ; low nibble of byte 1 is always 1
+    ora joy1
+    sta joy1
+@absent:
+    inc joy_pad
+    lda joy_pad
+    cmp #5
+    bne @pad
+
+    lda joy0                    ; new presses = down now, not last frame
+    eor joy0_prev
+    and joy0
+    sta joy_new0
+    lda joy1
+    eor joy1_prev
+    and joy1
+    sta joy_new1
+    lda joy0
+    sta joy0_prev
+    lda joy1
+    sta joy1_prev
+
+    lda joy_new0                ; D-pad repeat
+    and #JOY_DPAD
+    beq @held
+    lda #JOY_DELAY
+    sta joy_timer
+    bra @fire
+@held:
+    lda joy0
+    and #JOY_DPAD
+    beq @fire
+    dec joy_timer
+    bne @fire
+    lda #JOY_RATE
+    sta joy_timer
+    lda joy0
+    and #JOY_DPAD
+    ora joy_new0
+    sta joy_new0
+
+@fire:
+    ldx #0
+:   asl joy_new0
+    bcc @next0
+    lda joy_keys0,x
+    jsr joy_key
+@next0:
+    inx
+    cpx #8
+    bne :-
+    ldx #0
+:   asl joy_new1
+    bcc @next1
+    lda joy_keys1,x
+    jsr joy_key
+@next1:
+    inx
+    cpx #4
+    bne :-
+    rts
+
+; Feed key A (if any) to handle_key. Preserves X.
+joy_key:
+    beq :+
+    phx
+    jsr handle_key
+    plx
+:   rts
+
+.ifdef JOY_SCRIPT
+; Test build: pad 1 replays build/joyscript.inc, one frame per call.
+; Returns like JOYSTICK_GET.
+script_joy:
+    cmp #1
+    bne @none
+    lda joy_script_ptr+1
+    bne :+
+    lda #<joy_script            ; first call
+    sta joy_script_ptr
+    lda #>joy_script
+    sta joy_script_ptr+1
+:   lda joy_script_ptr
+    sta ZP_PTR
+    lda joy_script_ptr+1
+    sta ZP_PTR+1
+    ldy #1
+    lda (ZP_PTR),y
+    tax
+    beq @none                   ; byte 1 = 0 marks the end: pad unplugged
+    lda (ZP_PTR)
+    pha
+    clc
+    lda joy_script_ptr
+    adc #2
+    sta joy_script_ptr
+    bcc :+
+    inc joy_script_ptr+1
+:   pla
+    ldy #0
+    rts
+@none:
+    ldy #$ff
+    rts
+.endif
 
 ; Load the board bitmap into VRAM $00000. Carry set on error.
 load_board:
@@ -728,6 +877,16 @@ colors:
     rgb 14,  6, 12              ; C_COUNTER      9
     rgb 12,  9,  3              ; C_BRASS        9  (dashed teeth vs. wall 5)
 
+; Key code for each pad button, in bit order from bit 7 down (0 = unused)
+joy_keys0:      ; B, Y, Select, Start, Up, Down, Left, Right
+    .byte KEY_DEL, 0, 'r', KEY_RETURN, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
+joy_keys1:      ; A, X, L, R
+    .byte KEY_RETURN, 0, 0, 0
+
+.ifdef JOY_SCRIPT
+.include "joyscript.inc"
+.endif
+
 ring_base:
     .byte 0, CELLS, 2*CELLS, 3*CELLS
 
@@ -767,6 +926,18 @@ s_load_failed:  .byte "Can't load RINGS.BIN", 0
 .segment "BSS"
 
 saved_mode:     .res 1
+last_jiffy:     .res 1
+joy_pad:        .res 1
+joy0:           .res 1
+joy1:           .res 1
+joy0_prev:      .res 1
+joy1_prev:      .res 1
+joy_new0:       .res 1
+joy_new1:       .res 1
+joy_timer:      .res 1
+.ifdef JOY_SCRIPT
+joy_script_ptr: .res 2
+.endif
 level:          .res 1
 lvl:            .res LEVEL_SIZE     ; current level record (see tools/level.py)
 move_dir:       .res 1

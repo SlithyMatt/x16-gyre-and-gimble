@@ -10,7 +10,7 @@ BOARD   := $(BUILD)/RINGS.BIN
 SOURCES := $(wildcard src/*.asm src/*.inc)
 GEN_INC := $(BUILD)/regions.inc $(BUILD)/level.inc
 
-.PHONY: all run clean
+.PHONY: all run clean joytest
 
 all: $(PRG) $(BOARD)
 
@@ -30,6 +30,17 @@ $(BUILD)/level.inc: tools/level.py $(LEVELS) | $(BUILD)
 
 $(BUILD):
 	mkdir -p $@
+
+# Test build: pad 1 replays a scripted solve of every level (see tools/joyscript.py)
+joytest: $(BUILD)/JOYTEST.PRG $(BOARD)
+	cd $(BUILD) && $(X16EMU) -prg JOYTEST.PRG -run -scale 2
+
+$(BUILD)/JOYTEST.PRG: $(SOURCES) $(GEN_INC) $(BUILD)/joyscript.inc
+	$(CL65) -t cx16 -C cx16-asm.cfg -u __EXEHDR__ --asm-define JOY_SCRIPT \
+		--asm-include-dir src --asm-include-dir $(BUILD) -o $@ src/main.asm
+
+$(BUILD)/joyscript.inc: tools/joyscript.py tools/level.py $(LEVELS) | $(BUILD)
+	$(PYTHON) tools/joyscript.py $@ $(LEVELS)
 
 # Run from the build directory so the game can load RINGS.BIN from the host FS
 run: all

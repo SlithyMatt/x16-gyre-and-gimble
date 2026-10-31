@@ -9,6 +9,8 @@ CHROUT          = $FFD2
 GETIN           = $FFE4
 PLOT            = $FFF0
 SCREEN_MODE     = $FF5F
+JOYSTICK_GET    = $FF56
+RDTIM           = $FFDE
 
 ; VERA registers
 VERA_ADDR_L     = $9F20

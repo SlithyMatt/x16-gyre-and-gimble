@@ -45,14 +45,17 @@ its way home along that path.
 
 | Input | Action |
 | --- | --- |
-| Up / Down | Select ring |
-| Left / Right | Rotate the selected ring counter-clockwise / clockwise |
-| Button A / Enter | Send the tove (or check the path) |
-| Button B / Backspace | Undo |
-| Start / Esc | Menu: restart level, choose level |
+| D-pad up / down | Select ring |
+| D-pad left / right | Rotate the selected ring counter-clockwise / clockwise (held: repeats) |
+| B | Undo |
+| Select | Restart level |
+| A / Start | Next level after solving (later: send the tove) |
 
-Keyboard and SNES-style joystick both work, read through the KERNAL
-`joystick_get` call.
+The keyboard mirrors all of these (see README). SNES pads 1–4 are read
+with the KERNAL `joystick_get` call once per frame and translated into the
+same key codes as the keyboard, so `handle_key` is the only input handler.
+Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
+*Later:* a Start menu (choose level, quit).
 
 ## Rendering approach
 

@@ -1,23 +1,646 @@
-; Gyre & Gimble — entry point
+; Gyre & Gimble — prototype
+;
+; Rotate the rings until a tunnel runs from the entry gap at the top of the
+; outer ring to the burrow in the middle. The board bitmap never changes:
+; each region of it has its own palette entry, and the game recolors those
+; entries to show the current rotation (see DESIGN.md).
+
 .include "x16.inc"
+.include "regions.inc"
+
+; Cell bits (match tools/level.py)
+IN              = $01
+OUT             = $02
+CW              = $04
+TUN             = $80
+
+RINGS           = 4
+CELLS           = 12
+NCELLS          = RINGS * CELLS
+ENTRY_K         = (RINGS - 1) * CELLS   ; outer ring, position 0 (top)
+
+; Color ids (index into colors)
+C_STONE         = 0
+C_STONE_SEL     = 1
+C_TUNNEL        = 2
+C_LIT           = 3
+C_WALL          = 4
+C_BURROW        = 5
+C_HOME          = 6
+
+; CRT title-safe text area (10% margins on 40x30); keep all text inside it
+SAFE_L          = 4
+SAFE_R          = 35
+SAFE_T          = 3
+SAFE_B          = 26
+
+KEY_UP          = $91
+KEY_DOWN        = $11
+KEY_LEFT        = $9d
+KEY_RIGHT       = $1d
+KEY_DEL         = $14
+
+.assert REG_RGATE = REG_BODY + NCELLS, error, "palette regions must be contiguous"
+.assert REG_AGATE = REG_RGATE + NCELLS, error, "palette regions must be contiguous"
+.assert REG_ENTRY = REG_AGATE + NCELLS, error, "palette regions must be contiguous"
+.assert REG_BURROW = REG_ENTRY + 1, error, "palette regions must be contiguous"
+.assert REG_WALL = REG_BURROW + 1, error, "palette regions must be contiguous"
+
+.macro print_at row, col, str
+    ldx #row
+    ldy #col
+    clc
+    jsr PLOT
+    lda #<str
+    sta ZP_PTR
+    lda #>str
+    sta ZP_PTR+1
+    jsr print_str
+.endmacro
 
 .segment "CODE"
 
 start:
+    sec
+    jsr SCREEN_MODE
+    sta saved_mode
+    lda #$80                    ; 320x240 256-color bitmap + 40x30 text
+    clc
+    jsr SCREEN_MODE
     ldx #0
-@loop:
-    lda title,x
-    beq @done
+@init:
+    lda init_text,x
+    beq @loaded
     jsr CHROUT
     inx
-    bne @loop
+    bra @init
+@loaded:
+    jsr load_board
+    bcc @go
+    print_at SAFE_T, SAFE_L, s_load_failed
+:   jsr GETIN
+    cmp #0
+    beq :-
+    jmp quit
+@go:
+    jsr reset_level
+    ; fall through
+
+main_loop:
+    jsr GETIN
+    cmp #0
+    beq main_loop
+    cmp #$c1                    ; fold shifted letters (caps lock) to unshifted
+    bcc :+
+    cmp #$db
+    bcs :+
+    and #$7f
+:   cmp #KEY_UP
+    beq @up
+    cmp #'w'
+    bne :+
+@up:
+    lda sel
+    cmp #RINGS-1
+    beq main_loop
+    inc sel
+    bra @redraw
+:   cmp #KEY_DOWN
+    beq @down
+    cmp #'s'
+    bne :+
+@down:
+    lda sel
+    beq main_loop
+    dec sel
+    bra @redraw
+:   cmp #KEY_LEFT
+    beq @left
+    cmp #'a'
+    bne :+
+@left:
+    lda #$ff
+    bra @turn
+:   cmp #KEY_RIGHT
+    beq @right
+    cmp #'d'
+    bne :+
+@right:
+    lda #1
+    bra @turn
+:   cmp #'u'
+    beq @undo
+    cmp #KEY_DEL
+    beq @undo
+    cmp #'r'
+    bne :+
+    jsr reset_level
+    bra main_loop
+:   cmp #'q'
+    beq quit
+    bra main_loop
+@turn:
+    ldx won
+    bne main_loop
+    jsr do_move
+@redraw:
+    jsr refresh
+    bra main_loop
+@undo:
+    jsr undo_move
+    bra @redraw
+
+quit:
+    lda saved_mode
+    clc
+    jsr SCREEN_MODE
+    lda #$8e                    ; back to upper/graphics charset
+    jsr CHROUT
+    lda #$93
+    jmp CHROUT
+
+; Load the board bitmap into VRAM $00000. Carry set on error.
+load_board:
+    lda #1
+    ldx #8
+    ldy #2                      ; headerless
+    jsr SETLFS
+    lda #board_name_end - board_name
+    ldx #<board_name
+    ldy #>board_name
+    jsr SETNAM
+    lda #2                      ; VRAM bank 0
+    ldx #0
+    ldy #0
+    jmp LOAD
+
+reset_level:
+    ldx #RINGS-1
+:   lda level_start,x
+    sta off,x
+    dex
+    bpl :-
+    stz moves
+    stz hist_n
+    lda #RINGS-1
+    sta sel
+    jsr draw_hud
+    ; fall through
+
+refresh:
+    jsr compute_scr
+    jsr flood
+    jsr update_palette
+    jmp draw_status
+
+; Rotate ring X by A (+1 clockwise, -1 counter-clockwise)
+rotate:
+    clc
+    adc off,x
+    bpl :+
+    lda #CELLS-1
+:   cmp #CELLS
+    bne :+
+    lda #0
+:   sta off,x
+    rts
+
+; Turn the selected ring by A and record the move
+do_move:
+    ldx sel
+    pha
+    jsr rotate
+    pla
+    and #$80                    ; history: ring | $80 if counter-clockwise
+    ora sel
+    ldy hist_n
+    cpy #$ff
+    beq :+
+    sta hist,y
+    inc hist_n
+:   lda moves
+    cmp #$ff
+    beq :+
+    inc moves
+:   rts
+
+undo_move:
+    ldy hist_n
+    beq @done
+    dey
+    sty hist_n
+    lda hist,y
+    and #RINGS-1
+    tax
+    stx sel
+    lda hist,y
+    bmi :+
+    lda #$ff
+    bra :++
+:   lda #1
+:   jsr rotate
+    lda moves
+    beq @done
+    dec moves
 @done:
     rts
 
+; scr[r*12+p] = cell shown at screen position p of ring r
+compute_scr:
+    ldx #0
+    ldy #0
+@ring:
+    stx tmp_r
+    lda #CELLS                  ; first cell shown = (-off) mod 12
+    sec
+    sbc off,x
+    cmp #CELLS
+    bne :+
+    lda #0
+:   sta tmp_i
+    lda ring_base,x
+    sta tmp_b
+    lda #CELLS
+    sta tmp_n
+@cell:
+    lda tmp_b
+    clc
+    adc tmp_i
+    tax
+    lda level_cells,x
+    sta scr,y
+    iny
+    inc tmp_i
+    lda tmp_i
+    cmp #CELLS
+    bne :+
+    stz tmp_i
+:   dec tmp_n
+    bne @cell
+    ldx tmp_r
+    inx
+    cpx #RINGS
+    bne @ring
+    rts
+
+; Mark every screen cell reachable from the entry in vis; set won if the
+; burrow is reachable. Must match solved() in tools/level.py.
+flood:
+    ldx #NCELLS-1
+:   stz vis,x
+    dex
+    bpl :-
+    stz won
+    lda scr+ENTRY_K
+    and #OUT
+    bne :+
+    rts                         ; entry closed: nothing reachable
+:   lda #1
+    sta vis+ENTRY_K
+@pass:
+    stz changed
+    ldx #0                      ; X = cell index, Y = position in ring
+    ldy #0
+@cell:
+    lda vis,x
+    bne @cw
+    jmp @next
+@cw:
+    lda scr,x
+    and #CW
+    beq @ccw
+    txa
+    inc a
+    cpy #CELLS-1
+    bne :+
+    sec
+    sbc #CELLS
+:   jsr visit
+@ccw:
+    txa
+    dec a
+    cpy #0
+    bne :+
+    clc
+    adc #CELLS
+:   phx
+    tax
+    lda scr,x
+    and #CW
+    beq @ccw_no
+    txa
+    plx
+    jsr visit
+    bra @in
+@ccw_no:
+    plx
+@in:
+    lda scr,x
+    and #IN
+    beq @out
+    cpx #CELLS
+    bcs @in_ring
+    lda #1                      ; ring 0 opening inward: burrow reached
+    sta won
+    bra @out
+@in_ring:
+    txa
+    sec
+    sbc #CELLS
+    phx
+    tax
+    lda scr,x
+    and #OUT
+    beq @in_no
+    txa
+    plx
+    jsr visit
+    bra @out
+@in_no:
+    plx
+@out:
+    cpx #NCELLS-CELLS
+    bcs @next
+    lda scr,x
+    and #OUT
+    beq @next
+    txa
+    clc
+    adc #CELLS
+    phx
+    tax
+    lda scr,x
+    and #IN
+    beq @out_no
+    txa
+    plx
+    jsr visit
+    bra @next
+@out_no:
+    plx
+@next:
+    inx
+    iny
+    cpy #CELLS
+    bne :+
+    ldy #0
+:   cpx #NCELLS
+    beq :+
+    jmp @cell
+:   lda changed
+    beq @done
+    jmp @pass
+@done:
+    rts
+
+; Mark cell A visited. Preserves X and Y.
+visit:
+    phx
+    tax
+    lda vis,x
+    bne :+
+    lda #1
+    sta vis,x
+    sta changed
+:   plx
+    rts
+
+; Recolor every board region from scr/vis/sel/won
+update_palette:
+    stz VERA_CTRL
+    lda #<(VRAM_PALETTE + REG_BODY * 2)
+    sta VERA_ADDR_L
+    lda #>(VRAM_PALETTE + REG_BODY * 2)
+    sta VERA_ADDR_M
+    lda #^(VRAM_PALETTE + REG_BODY * 2) | VERA_INC_1
+    sta VERA_ADDR_H
+
+    ldx #0
+@body:
+    lda scr,x
+    bpl @stone
+    jsr open_color
+    bra @body_put
+@stone:
+    lda ring_of,x
+    cmp sel
+    bne :+
+    lda #C_STONE_SEL
+    bra @body_put
+:   lda #C_STONE
+@body_put:
+    jsr put_color
+    inx
+    cpx #NCELLS
+    bne @body
+
+    ldx #0                      ; radial gates, inner side of each cell
+@rgate:
+    lda scr,x
+    and #IN
+    beq @rgate_closed
+    cpx #CELLS
+    bcc @rgate_open
+    lda scr-CELLS,x
+    and #OUT
+    beq @rgate_closed
+@rgate_open:
+    jsr open_color
+    bra @rgate_put
+@rgate_closed:
+    lda #C_WALL
+@rgate_put:
+    jsr put_color
+    inx
+    cpx #NCELLS
+    bne @rgate
+
+    ldx #0                      ; arc gates, clockwise side of each cell
+@agate:
+    lda scr,x
+    and #CW
+    beq :+
+    jsr open_color
+    bra @agate_put
+:   lda #C_WALL
+@agate_put:
+    jsr put_color
+    inx
+    cpx #NCELLS
+    bne @agate
+
+    ldx #ENTRY_K
+    lda scr,x
+    and #OUT
+    beq :+
+    jsr open_color
+    bra :++
+:   lda #C_WALL
+:   jsr put_color
+
+    lda won
+    beq :+
+    lda #C_HOME
+    bra :++
+:   lda #C_BURROW
+:   jsr put_color
+
+    lda #C_WALL
+    jmp put_color
+
+; A = color for an open tunnel at cell X (lit if reachable)
+open_color:
+    lda vis,x
+    beq :+
+    lda #C_LIT
+    rts
+:   lda #C_TUNNEL
+    rts
+
+; Write color id A to VERA_DATA0. Preserves X.
+put_color:
+    phx
+    asl a
+    tax
+    lda colors,x
+    sta VERA_DATA0
+    lda colors+1,x
+    sta VERA_DATA0
+    plx
+    rts
+
+draw_hud:
+    lda #$93
+    jsr CHROUT
+    print_at SAFE_T, SAFE_L, s_title1
+    print_at SAFE_T+1, SAFE_L, s_title2
+    print_at SAFE_T, SAFE_R-8, s_moves
+    print_at SAFE_T+1, SAFE_R-8, s_par
+    lda #LEVEL_PAR
+    jsr print_dec3
+    print_at SAFE_B-3, SAFE_L, s_help1
+    print_at SAFE_B-2, SAFE_L, s_help2
+    print_at SAFE_B-1, SAFE_L, s_help3
+    print_at SAFE_B, SAFE_L, s_help4
+    print_at SAFE_B, SAFE_R-5, s_help5
+    rts
+
+draw_status:
+    ldx #SAFE_T
+    ldy #SAFE_R-2
+    clc
+    jsr PLOT
+    lda moves
+    jsr print_dec3
+    lda won
+    beq :+
+    print_at SAFE_T+2, SAFE_R-7, s_home1
+    print_at SAFE_T+3, SAFE_R-7, s_home2
+    rts
+:   print_at SAFE_T+2, SAFE_R-7, s_blank
+    print_at SAFE_T+3, SAFE_R-7, s_blank
+    rts
+
+; Print the zero-terminated string at (ZP_PTR)
+print_str:
+    ldy #0
+:   lda (ZP_PTR),y
+    beq :+
+    jsr CHROUT
+    iny
+    bne :-
+:   rts
+
+; Print A as three decimal digits at the cursor
+print_dec3:
+    ldx #0
+:   cmp #100
+    bcc :+
+    sbc #100
+    inx
+    bra :-
+:   pha
+    txa
+    ora #'0'
+    jsr CHROUT
+    pla
+    ldx #0
+:   cmp #10
+    bcc :+
+    sbc #10
+    inx
+    bra :-
+:   pha
+    txa
+    ora #'0'
+    jsr CHROUT
+    pla
+    ora #'0'
+    jmp CHROUT
+
 .segment "RODATA"
 
-title:
-    .byte $0e                   ; switch to upper/lowercase charset
-    .byte $93                   ; clear screen
-    .byte "Gyre & Gimble", $0d
-    .byte "(provisional title)", $0d, 0
+.include "level.inc"
+
+.macro rgb r, g, b
+    .byte (g << 4) | b, r
+.endmacro
+
+; Each color sits on its own luma step so the board still reads on composite
+; video, where chroma bleeds (luma 0-15 in comments).
+colors:
+    rgb  8,  7,  5              ; C_STONE        7
+    rgb 11, 10,  7              ; C_STONE_SEL   10
+    rgb  1,  0,  0              ; C_TUNNEL       0
+    rgb 15, 14,  3              ; C_LIT         13
+    rgb  4,  5,  6              ; C_WALL         5
+    rgb  1,  4,  2              ; C_BURROW       3
+    rgb 15, 15, 13              ; C_HOME        15
+
+ring_base:
+    .byte 0, CELLS, 2*CELLS, 3*CELLS
+
+ring_of:
+.repeat NCELLS, i
+    .byte i / CELLS
+.endrepeat
+
+init_text:
+    .byte $0e                   ; upper/lowercase charset
+    .byte $90, $01, $05         ; black, swap (black background), white text
+    .byte 0
+
+board_name:
+    .byte "rings.bin"
+board_name_end:
+
+s_title1:       .byte "Gyre &", 0
+s_title2:       .byte "Gimble", 0
+s_moves:        .byte "Moves", 0
+s_par:          .byte "Par   ", 0
+s_help1:        .byte "W/S ring", 0
+s_help2:        .byte "A/D turn", 0
+s_help3:        .byte "U undo", 0
+s_help4:        .byte "R reset", 0
+s_help5:        .byte "Q quit", 0
+s_home1:        .byte "The tove", 0
+s_home2:        .byte "is home!", 0
+s_blank:        .byte "        ", 0
+s_load_failed:  .byte "Can't load RINGS.BIN", 0
+
+.segment "BSS"
+
+saved_mode:     .res 1
+off:            .res RINGS
+scr:            .res NCELLS
+vis:            .res NCELLS
+sel:            .res 1
+moves:          .res 1
+won:            .res 1
+changed:        .res 1
+hist_n:         .res 1
+hist:           .res 256
+tmp_r:          .res 1
+tmp_i:          .res 1
+tmp_b:          .res 1
+tmp_n:          .res 1

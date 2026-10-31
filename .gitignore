@@ -1,0 +1,8 @@
+build/
+*.PRG
+*.prg
+*.o
+*.list
+*.map
+*.sym
+.DS_Store

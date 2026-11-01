@@ -14,13 +14,13 @@ runs from the gap in the outer rim to the burrow at the center. See
 ## Build & run
 
 ```sh
-make        # builds build/GYRE.PRG and build/RINGS.BIN
+make        # builds build/GYRE.PRG, RINGS.BIN and CELLS.BIN
 make run    # builds, then launches x16emu from build/
 make clean
 make joytest  # replays a scripted SNES pad through every level
 ```
 
-The game loads `RINGS.BIN` from the current device, so keep it next to `GYRE.PRG`.
+The game loads `RINGS.BIN` and `CELLS.BIN` from the current device, so keep them next to `GYRE.PRG`.
 
 ## Controls
 
@@ -39,9 +39,9 @@ Any SNES controller in ports 1–4 works, and a held D-pad direction repeats.
 When the path connects, the tove walks home along it (Return or A skips
 the walk).
 
-Rings joined by brass gear teeth are linked by a **gimbal**: turning the
+Rings whose gear teeth mesh are linked by a **gimbal**: turning the
 driving ring also turns the next one. When you select a ring, any ring it
-will drag is tinted blue-grey (same direction) or mauve (opposite).
+will drag, teeth and all, is tinted blue (same direction) or mauve (opposite).
 
 Each solve earns **stars** against the level's par (the fewest moves
 possible): 3 at par, 2 within par plus half again (rounded down), otherwise 1.
@@ -51,7 +51,10 @@ session shows under the level number.
 ## Layout
 
 - `src/`: 65C02 assembly (`main.asm` is the entry point)
-- `tools/genrings.py`: generates the board bitmap and its palette-region constants
+- `tools/genrings.py`: renders the board backdrop and the anti-aliased,
+  beveled cell pieces the game draws from
+- `tools/shading.py`, `tools/genthemes.py`: the shading model, and the
+  per-level color themes (`assets/themes.txt`) built from it
 - `tools/level.py`: compiles the levels, checks that each is solvable and
   computes par. `suggest LEVEL N` finds starting rotations with par N, and
   `keys LEVEL` prints a shortest solution as keystrokes.

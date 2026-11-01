@@ -19,3 +19,5 @@ ring0: .  .  .  oc i  .  .  .  .  oi .  .
 gimbal: 3 > 2 +
 
 start: 3 10 3 5
+
+theme: brillig

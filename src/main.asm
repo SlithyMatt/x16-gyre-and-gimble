@@ -1,17 +1,17 @@
 ; Gyre & Gimble — prototype
 ;
 ; Rotate the rings until a tunnel runs from the entry gap at the top of the
-; outer ring to the burrow in the middle. The board bitmap never changes:
-; each region of it has its own palette entry, and the game recolors those
-; entries to show the current rotation (see DESIGN.md).
+; outer ring to the burrow in the middle. Each screen cell is redrawn from
+; pre-shaded pieces when it changes, in its color class's palette row; the
+; palette comes from the level's theme (see DESIGN.md).
 
 .include "x16.inc"
-.include "regions.inc"
+.include "board.inc"
 
 ; Tove sprite
 TOVE_SPRITE     = 1             ; sprite 0 is the KERNAL mouse pointer
 TOVE_VRAM       = $13000        ; KERNAL's sprite image area in this mode
-TOVE_PAL        = 14            ; palette offset: indices 224-239 (board uses 16-213)
+TOVE_PAL        = ROW_TOVE      ; palette offset: indices 224-239
 TOVE_Z          = 2 << 2        ; Z-depth 2: over the board, under the HUD text
 WALK_STEPS      = 8             ; frames per waypoint segment (make_step assumes 8)
 VRAM_SPRITES    = $1FC00
@@ -27,17 +27,14 @@ CELLS           = 12
 NCELLS          = RINGS * CELLS
 ENTRY_K         = (RINGS - 1) * CELLS   ; outer ring, position 0 (top)
 
-; Color ids (index into colors)
-C_STONE         = 0
-C_STONE_SEL     = 1
-C_TUNNEL        = 2
-C_LIT           = 3
-C_WALL          = 4
-C_BURROW        = 5
-C_HOME          = 6
-C_FOLLOW        = 7             ; stone of a ring the selection drags along
-C_COUNTER       = 8             ; ... or drags the opposite way
-C_BRASS         = 9             ; gimbal gear teeth
+CCW             = $08           ; drawn-cell key: opens counter-clockwise
+KEY_CLASS       = $70           ; drawn-cell key: class palette row << 4
+
+; Zero page (ZP_PTR is the general pointer)
+ZP_THEME        = $24           ; the level's theme palette data
+ZP_CLASS        = $26           ; class row << 4 for draw_piece
+
+PALETTE_ROW     = 32            ; bytes per palette row
 
 ; CRT title-safe text area (10% margins on 40x30); keep all text inside it
 SAFE_L          = 4
@@ -64,14 +61,10 @@ JOY_DELAY       = 18
 JOY_RATE        = 8
 JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 
-.assert REG_IN_STUB = REG_BODY + NCELLS, error, "palette regions must be contiguous"
-.assert REG_OUT_STUB = REG_IN_STUB + NCELLS, error, "palette regions must be contiguous"
-.assert REG_AGATE = REG_OUT_STUB + NCELLS, error, "palette regions must be contiguous"
-.assert REG_ENTRY = REG_AGATE + NCELLS, error, "palette regions must be contiguous"
-.assert REG_BURROW = REG_ENTRY + 1, error, "palette regions must be contiguous"
-.assert REG_WALL = REG_BURROW + 1, error, "palette regions must be contiguous"
-.assert REG_TEETH = REG_WALL + 1, error, "palette regions must be contiguous"
-.assert REG_TEETH + RINGS - 1 <= TOVE_PAL * 16, error, "board regions overlap the tove's palette"
+.assert ROW_TUNNEL = ROW_STONE + RINGS, error, "class rows must be contiguous"
+.assert ROW_LIT = ROW_TUNNEL + 1, error, "class rows must be contiguous"
+.assert ROW_WALL = ROW_LIT + 1, error, "class rows must be contiguous"
+.assert (IN | OUT | CW | CCW) & KEY_CLASS = 0, error, "drawn-cell key bits overlap"
 
 .macro print_at row, col, str
     ldx #row
@@ -90,6 +83,8 @@ JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 .include "level.inc"
 .include "waypoints.inc"
 .include "tove.inc"
+.include "themes.inc"
+.include "pieces.inc"
 .include "stars.inc"
 
 .import __BSS_RUN__, __BSS_SIZE__
@@ -114,7 +109,10 @@ start:
 @loaded:
     jsr init_stars              ; after the charset switch, which reloads it
     jsr load_board
+    bcs @failed
+    jsr load_cells
     bcc @go
+@failed:
     print_at SAFE_T, SAFE_L, s_load_failed
 :   jsr GETIN
     cmp #0
@@ -737,6 +735,28 @@ clear_bss:
 @done:
     rts
 
+; Load the cell pieces into high RAM from bank CELLS_BANK. Carry set on error.
+load_cells:
+    lda #1
+    ldx #8
+    ldy #2                      ; headerless
+    jsr SETLFS
+    lda #cells_name_end - cells_name
+    ldx #<cells_name
+    ldy #>cells_name
+    jsr SETNAM
+    lda RAM_BANK
+    pha
+    lda #CELLS_BANK             ; LOAD carries on into the following banks
+    sta RAM_BANK
+    lda #0
+    ldx #<$a000
+    ldy #>$a000
+    jsr LOAD
+    pla
+    sta RAM_BANK
+    rts
+
 ; Load the board bitmap into VRAM $00000. Carry set on error.
 load_board:
     lda #1
@@ -773,6 +793,16 @@ reset_level:
     stz hist_n
     lda #RINGS-1
     sta sel
+    ldx lvl+LV_THEME
+    lda theme_lo,x
+    sta ZP_THEME
+    lda theme_hi,x
+    sta ZP_THEME+1
+    lda #$ff                    ; nothing drawn yet: draw every cell
+    ldx #NCELLS-1
+:   sta drawn,x
+    dex
+    bpl :-
     jsr draw_hud
     ; fall through
 
@@ -791,6 +821,7 @@ refresh:
     jsr start_walk              ; just solved: walk home
 @draw:
     jsr update_palette
+    jsr draw_cells
     jmp draw_status
 
 ; Rotate ring X by A (+1 clockwise, -1 counter-clockwise)
@@ -1015,133 +1046,228 @@ enqueue:
     inc q_tail
 :   rts
 
-; Recolor every board region from scr/vis/sel/won
+; Write the board's palette rows from the level's theme: each ring's stone
+; (selected, dragged by a gimbal, or plain), tunnel, lit tunnel and wall,
+; then the fixed row's burrow (home once the tove is in) and entry.
 update_palette:
-    stz VERA_CTRL
-    lda #<(VRAM_PALETTE + REG_BODY * 2)
-    sta VERA_ADDR_L
-    lda #>(VRAM_PALETTE + REG_BODY * 2)
-    sta VERA_ADDR_M
-    lda #^(VRAM_PALETTE + REG_BODY * 2) | VERA_INC_1
-    sta VERA_ADDR_H
-
-    ldx sel                     ; stone color per ring: selected, dragged, or plain
+    ldx sel
     lda lvl+LV_SAME,x
     sta tmp_same
     lda lvl+LV_OPP,x
     sta tmp_opp
     ldx #0
 @ring:
-    lda #C_STONE
+    lda #TH_STONE
     lsr tmp_opp
     bcc :+
-    lda #C_COUNTER
+    lda #TH_COUNTER
 :   lsr tmp_same
     bcc :+
-    lda #C_FOLLOW
+    lda #TH_FOLLOW
 :   sta ring_stone,x
     inx
     cpx #RINGS
     bne @ring
     ldx sel
-    lda #C_STONE_SEL
+    lda #TH_SEL
     sta ring_stone,x
 
+    stz VERA_CTRL
+    lda #<(VRAM_PALETTE + ROW_STONE * PALETTE_ROW)
+    sta VERA_ADDR_L
+    lda #>(VRAM_PALETTE + ROW_STONE * PALETTE_ROW)
+    sta VERA_ADDR_M
+    lda #^(VRAM_PALETTE + ROW_STONE * PALETTE_ROW) | VERA_INC_1
+    sta VERA_ADDR_H
     ldx #0
-@body:
-    lda scr,x
-    bpl @stone
-    jsr open_color
-    bra @body_put
-@stone:
-    ldy ring_of,x
-    lda ring_stone,y
-@body_put:
-    jsr put_color
+:   lda ring_stone,x
+    tay
+    lda #PALETTE_ROW
+    jsr put_theme
     inx
-    cpx #NCELLS
-    bne @body
+    cpx #RINGS
+    bne :-
+    ldy #TH_TUNNEL              ; rows 5-7 follow on
+    lda #PALETTE_ROW
+    jsr put_theme
+    ldy #TH_LIT
+    lda #PALETTE_ROW
+    jsr put_theme
+    ldy #TH_WALL
+    lda #TH_BURROW - TH_WALL
+    jsr put_theme
 
-    lda #IN                     ; notches for each cell's inward openings ...
-    jsr put_stubs
-    lda #OUT                    ; ... and outward ones
-    jsr put_stubs
-
-    ldx #0                      ; arc gates, clockwise side of each cell
-@agate:
-    lda scr,x
-    and #CW
-    beq :+
-    jsr open_color
-    bra @agate_put
-:   lda #C_WALL
-@agate_put:
-    jsr put_color
-    inx
-    cpx #NCELLS
-    bne @agate
-
-    lda #C_LIT                  ; the entry is always open: the tove starts there
-    jsr put_color
-
+    lda #<(VRAM_PALETTE + ROW_FIXED * PALETTE_ROW)
+    sta VERA_ADDR_L
+    lda #>(VRAM_PALETTE + ROW_FIXED * PALETTE_ROW)
+    sta VERA_ADDR_M
+    ldy #TH_BURROW
     lda arrived
     beq :+
-    lda #C_HOME
-    bra :++
-:   lda #C_BURROW
-:   jsr put_color
+    ldy #TH_HOME
+:   lda #TH_HOME - TH_BURROW
+    jsr put_theme
+    ldy #TH_ENTRY
+    lda #TH_SIZE - TH_ENTRY
+    jmp put_theme
 
-    lda #C_WALL
-    jsr put_color
+.assert ENTRY_SLOT = BURROW_SLOT + BURROW_SLOTS, error, "fixed row layout"
+.assert TH_HOME - TH_BURROW = BURROW_SLOTS * 2, error, "fixed row layout"
 
-    ldx #0                      ; gear teeth between rings x and x+1
-@teeth:
-    lda #C_WALL
-    ldy lvl+LV_TEETH,x
-    beq :+
-    lda #C_BRASS
-:   jsr put_color
-    inx
-    cpx #RINGS-1
-    bne @teeth
+; Copy A bytes of the theme from offset Y to VERA_DATA0. Preserves X.
+put_theme:
+    sta tmp_n
+:   lda (ZP_THEME),y
+    sta VERA_DATA0
+    iny
+    dec tmp_n
+    bne :-
     rts
 
-; Write a notch color for every cell: open if the cell has opening A
-put_stubs:
-    sta tmp_b
+; Redraw every screen cell whose contents or color class changed. A cell's
+; key is its class row << 4 plus its openings (IN, OUT, CW, and CCW when its
+; counter-clockwise neighbor opens clockwise into it).
+draw_cells:
+    lda RAM_BANK
+    pha
     ldx #0
-@stub:
+@cell:
     lda scr,x
-    and tmp_b
+    bmi @tunnel
+    ldy ring_of,x               ; stone: its ring's row, no openings
+    lda ring_class,y
+    bra @key
+@tunnel:
+    and #IN | OUT | CW
+    sta tmp_b
+    ldy ccw_of,x
+    lda scr,y
+    and #CW
     beq :+
-    jsr open_color
-    bra :++
-:   lda #C_WALL
-:   jsr put_color
+    lda #CCW
+    tsb tmp_b
+:   lda #ROW_TUNNEL << 4
+    ldy vis,x
+    beq :+
+    lda #ROW_LIT << 4
+:   ora tmp_b
+@key:
+    cmp drawn,x
+    beq @next
+    sta drawn,x
+    jsr draw_cell
+@next:
     inx
     cpx #NCELLS
-    bne @stub
+    bne @cell
+    pla
+    sta RAM_BANK
     rts
 
-; A = color for an open tunnel at cell X (lit if reachable)
-open_color:
-    lda vis,x
+; Draw screen cell X with key A: its base piece, its gear teeth where a
+; gimbal links its ring across a gap, then a piece per opening. Preserves X.
+draw_cell:
+    sta tmp_b
+    and #KEY_CLASS
+    sta ZP_CLASS
+    stx tmp_i
+    txa                         ; piece index: kind * NCELLS + cell
+    jsr draw_piece
+
+    lda ZP_CLASS                ; teeth are the ring's, in its stone color
+    pha
+    ldy ring_of,x
+    lda ring_class,y
+    sta ZP_CLASS
+    tya
+    beq :+                      ; ring 0 has no gap inside it
+    lda lvl+LV_TEETH-1,y        ; gimbal across the gap inside this ring
     beq :+
-    lda #C_LIT
-    rts
-:   lda #C_TUNNEL
+    txa
+    jsr draw_teeth
+:   ldy ring_of,x
+    cpy #RINGS-1
+    beq :+
+    lda lvl+LV_TEETH,y          ; ... and across the gap outside it
+    beq :+
+    txa
+    clc
+    adc #NCELLS
+    jsr draw_teeth
+:   pla
+    sta ZP_CLASS
+@kind:
+    lda tmp_i
+    clc
+    adc #NCELLS
+    sta tmp_i
+    lsr tmp_b                   ; IN, OUT, CW, CCW in kind order
+    bcc :+
+    jsr draw_piece
+:   lda tmp_i
+    cmp #NCELLS * 5 - NCELLS
+    bcc @kind
+    sec
+    sbc #NCELLS * 4
+    tax
     rts
 
-; Write color id A to VERA_DATA0. Preserves X.
-put_color:
-    phx
-    asl a
-    tax
-    lda colors,x
+; Copy teeth piece A (kind * NCELLS + cell, kinds tin, tout) like draw_piece
+draw_teeth:
+    tay
+    lda teeth_bank,y
+    sta RAM_BANK
+    lda teeth_lo,y
+    sta ZP_PTR
+    lda teeth_hi,y
+    sta ZP_PTR+1
+    bra draw_spans
+
+; Copy piece A to VRAM, ORing ZP_CLASS into each pixel. Preserves X.
+draw_piece:
+    tay
+    lda piece_bank,y
+    sta RAM_BANK
+    lda piece_lo,y
+    sta ZP_PTR
+    lda piece_hi,y
+    sta ZP_PTR+1
+draw_spans:
+@span:
+    lda (ZP_PTR)                ; length; 0 ends the piece
+    beq @done
+    sta span_len
+    ldy #1
+    lda (ZP_PTR),y
+    sta VERA_ADDR_L
+    iny
+    lda (ZP_PTR),y
+    sta VERA_ADDR_M
+    iny
+    lda (ZP_PTR),y
+    ora #VERA_INC_1
+    sta VERA_ADDR_H
+    lda ZP_PTR
+    clc
+    adc #4
+    sta ZP_PTR
+    bcc :+
+    inc ZP_PTR+1
+:   ldy #0
+:   lda (ZP_PTR),y
+    ora ZP_CLASS                ; no effect on the literal wall rows
     sta VERA_DATA0
-    lda colors+1,x
-    sta VERA_DATA0
-    plx
+    iny
+    cpy span_len
+    bne :-
+    tya
+    clc
+    adc ZP_PTR
+    sta ZP_PTR
+    bcc @span
+    inc ZP_PTR+1
+    bra @span
+@done:
     rts
 
 draw_hud:
@@ -1320,24 +1446,6 @@ print_dec2:
 
 .segment "RODATA"
 
-.macro rgb r, g, b
-    .byte (g << 4) | b, r
-.endmacro
-
-; Each color sits on its own luma step so the board still reads on composite
-; video, where chroma bleeds (luma 0-15 in comments).
-colors:
-    rgb  8,  7,  5              ; C_STONE        7
-    rgb 11, 10,  7              ; C_STONE_SEL   10
-    rgb  1,  0,  0              ; C_TUNNEL       0
-    rgb 15, 14,  3              ; C_LIT         13
-    rgb  4,  5,  6              ; C_WALL         5
-    rgb  1,  4,  2              ; C_BURROW       3
-    rgb 15, 15, 13              ; C_HOME        15
-    rgb  6, 10, 14              ; C_FOLLOW       9  (hue differs: large areas)
-    rgb 14,  6, 12              ; C_COUNTER      9
-    rgb 12,  9,  3              ; C_BRASS        9  (dashed teeth vs. wall 5)
-
 ; Key code for each pad button, in bit order from bit 7 down (0 = unused)
 joy_keys0:      ; B, Y, Select, Start, Up, Down, Left, Right
     .byte KEY_DEL, 0, 'r', KEY_RETURN, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
@@ -1361,6 +1469,16 @@ pos_of:
     .byte i .mod CELLS
 .endrepeat
 
+ccw_of:                         ; the counter-clockwise neighbor of each cell
+.repeat NCELLS, i
+    .byte i / CELLS * CELLS + (i + CELLS - 1) .mod CELLS
+.endrepeat
+
+ring_class:                     ; each ring's stone row << 4
+.repeat RINGS, r
+    .byte (ROW_STONE + r) << 4
+.endrepeat
+
 init_text:
     .byte $0e                   ; upper/lowercase charset
     .byte $90, $01, $05         ; black, swap (black background), white text
@@ -1369,6 +1487,9 @@ init_text:
 board_name:
     .byte "rings.bin"
 board_name_end:
+cells_name:
+    .byte "cells.bin"
+cells_name_end:
 
 s_title1:       .byte "Gyre &", 0
 s_title2:       .byte "Gimble", 0
@@ -1388,7 +1509,7 @@ s_end2:         .byte "is clear", 0
 s_level:        .byte "Level ", 0
 s_best:         .byte "Best", 0
 s_blank:        .byte "        ", 0
-s_load_failed:  .byte "Can't load RINGS.BIN", 0
+s_load_failed:  .byte "Can't load RINGS.BIN or CELLS.BIN", 0
 
 .segment "BSS"
 
@@ -1436,7 +1557,9 @@ lvl:            .res LEVEL_SIZE     ; current level record (see tools/level.py)
 move_dir:       .res 1
 tmp_same:       .res 1
 tmp_opp:        .res 1
-ring_stone:     .res RINGS
+ring_stone:     .res RINGS      ; TH_ offset of each ring's stone ramp
+drawn:          .res NCELLS     ; key of each screen cell as drawn ($ff: redraw)
+span_len:       .res 1
 off:            .res RINGS
 scr:            .res NCELLS
 vis:            .res NCELLS

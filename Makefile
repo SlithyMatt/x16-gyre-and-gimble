@@ -6,10 +6,10 @@ PYTHON  ?= python3
 NAME    := GYRE
 BUILD   := build
 PRG     := $(BUILD)/$(NAME).PRG
-BOARD   := $(BUILD)/RINGS.BIN
+BOARD   := $(BUILD)/RINGS.BIN $(BUILD)/CELLS.BIN
 SOURCES := $(wildcard src/*.asm src/*.inc)
-GEN_INC := $(BUILD)/regions.inc $(BUILD)/waypoints.inc $(BUILD)/level.inc $(BUILD)/tove.inc \
-           $(BUILD)/stars.inc
+GEN_INC := $(BUILD)/board.inc $(BUILD)/pieces.inc $(BUILD)/waypoints.inc $(BUILD)/level.inc \
+           $(BUILD)/tove.inc $(BUILD)/stars.inc $(BUILD)/themes.inc
 
 .PHONY: all run clean joytest
 
@@ -21,8 +21,13 @@ $(PRG): $(SOURCES) $(GEN_INC) | $(BUILD)
 		-l $(BUILD)/$(NAME).list -m $(BUILD)/$(NAME).map -Ln $(BUILD)/$(NAME).sym \
 		src/main.asm
 
-$(BOARD) $(BUILD)/regions.inc $(BUILD)/waypoints.inc &: tools/genrings.py | $(BUILD)
-	$(PYTHON) tools/genrings.py $(BOARD) $(BUILD)/regions.inc $(BUILD)/waypoints.inc
+BOARD_GEN := $(BOARD) $(BUILD)/board.inc $(BUILD)/pieces.inc $(BUILD)/waypoints.inc
+
+$(BOARD_GEN) &: tools/genrings.py tools/shading.py | $(BUILD)
+	$(PYTHON) tools/genrings.py $(BOARD_GEN)
+
+$(BUILD)/themes.inc: tools/genthemes.py tools/shading.py assets/themes.txt | $(BUILD)
+	$(PYTHON) tools/genthemes.py assets/themes.txt $@
 
 $(BUILD)/tove.inc: tools/gensprites.py assets/tove.txt | $(BUILD)
 	$(PYTHON) tools/gensprites.py assets/tove.txt tove $@
@@ -32,7 +37,7 @@ $(BUILD)/stars.inc: tools/genchars.py assets/stars.txt | $(BUILD)
 
 LEVELS  := $(sort $(wildcard levels/*.txt))
 
-$(BUILD)/level.inc: tools/level.py $(LEVELS) | $(BUILD)
+$(BUILD)/level.inc: tools/level.py tools/shading.py assets/themes.txt $(LEVELS) | $(BUILD)
 	$(PYTHON) tools/level.py build $@ $(LEVELS)
 
 $(BUILD):

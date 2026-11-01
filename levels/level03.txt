@@ -17,3 +17,5 @@ gimbal: 3 > 2 -
 gimbal: 2 > 1 +
 
 start: 6 3 10 6
+
+theme: tulgey

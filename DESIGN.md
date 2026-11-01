@@ -35,8 +35,9 @@ its way home along that path.
 1. **Gimbals** *(implemented, levels 2–3)*: neighboring rings geared together. Turning the
    driver also turns the follower, the same way (`+`) or the opposite way
    (`-`), but turning the follower alone leaves the driver still. Gimbals
-   can chain (3→2→1). The gap shows brass gear teeth, and selecting a ring
-   tints the rings it will drag. This is where the "Gimble" half of the
+   can chain (3→2→1). Linked rings grow gear teeth that mesh across the
+   gap, in each ring's own stone color, so selecting a ring tints the rings
+   it will drag right where their teeth engage. This is where the "Gimble" half of the
    name pays off. *Later:* gear ratios other than 1:1.
 2. **Locked rings:** these can't be turned until the tove passes a key cell.
 3. **Borogoves:** hazards sitting in cells that block a path until they're
@@ -61,16 +62,48 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
 
 ## Rendering approach
 
-- **Layer 0:** a 320×240 8bpp bitmap of the ring geometry, generated at
-  build time by a Python tool and loaded straight into VRAM.
-- **Palette trick:** every pixel's color index identifies a fixed *screen
-  region*: one region per on-screen cell body, inner half-gate, outer
-  half-gate and arc gate (4 rings × 12 cells × 4 regions = 192 entries,
-  indices 16–213; the tove's sprite palette is 224–239).
-  To show the board, the game writes each region's palette entry as tunnel
-  or stone, according to which cell is currently rotated into that position.
-  A rotation only rewrites the palette (≤384 bytes), never the bitmap, so
-  it's effectively free.
+- **Layer 0:** a 320×240 8bpp bitmap. `RINGS.BIN` is the static backdrop
+  (rim, entry, burrow), loaded straight into VRAM.
+- **Shaded cells:** each screen cell owns a *footprint*, its band of the
+  ring plus the near half of each wall around it. `tools/genrings.py`
+  pre-renders every footprint with 4×4 supersampled anti-aliasing and an
+  emboss bevel lit from the top-left, as a base piece plus one overlay
+  piece per opening (in, out, clockwise, counter-clockwise). The pieces
+  (`CELLS.BIN`, about 43 KB) load into high RAM banks 1–6 and are copied to
+  VRAM as spans. The game keeps a key per screen cell (class and openings)
+  and redraws only cells whose key changed, so a move redraws the turned
+  rings and any cell that lit up or went dark.
+- **Palette rows as ramps:** pixels store a *slot* in a 16-entry ramp:
+  bevel −2..+2 at full coverage, then edge pixels at 3 coverage levels ×
+  bevel sign, blended toward the wall. The game ORs the cell's class row
+  into each slot as it copies:
+  | Row | Class |
+  | --- | --- |
+  | 0 | text layer |
+  | 1–4 | each ring's stone (selected, gimbal-dragged or plain) |
+  | 5 | tunnel |
+  | 6 | lit tunnel (reachable from the entry) |
+  | 7 | wall and rim (literal) |
+  | 14 | the tove sprite |
+  | 15 | burrow, entry (literal) |
+
+  Rows 7 and 15 already have every bit that the OR can set, so the same
+  copy loop leaves wall pixels alone. Stone is raised and tunnels are
+  recessed: the tunnel and lit ramps invert the bevel, so one set of pieces
+  serves every class. Selection, gimbal tints and the burrow lighting up
+  are still palette writes, with no redraw.
+- **Gear teeth:** in each gap, every half-cell between the radial notch
+  and the cell's edge is split into slots that alternate between the outer
+  ring's teeth and the inner ring's. The two rings' footprints follow the
+  slots, so each ring owns its own teeth, which reach past the middle of
+  the gap between the other's. A level's gimbals decide which gaps get
+  teeth (separate `tin`/`tout` pieces, drawn in the ring's stone row).
+- **Themes:** each level names a theme (`theme:` in its file) from
+  `assets/themes.txt`. All themes share one small family of hues (earthy
+  stone, slate wall, peat tunnel, gold path) and vary the light: noon,
+  brillig (warm late afternoon), tulgey (mossy shade). `tools/shading.py`
+  builds the ramps, and the build fails if a theme breaks the luma order
+  below.
 - **Readable openings:** every cell shows its own openings, so the player
   can see what a rotation will line up. An open side is a notch that
   reaches halfway across the 8 px wall between rings: an inward opening
@@ -85,7 +118,7 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
   session best. Earned and unearned stars are the same solid shape, in
   yellow and gray, so they differ in luma.
 - **Sprites:** the tove (sprite 1; sprite 0 is the KERNAL mouse), 16×16
-  4bpp with its own palette block (indices 176–191), at Z-depth 2: over
+  4bpp with its own palette block (row 14, indices 224–239), at Z-depth 2: over
   the board, under the HUD text. Art is a text sprite sheet,
   `assets/tove.txt` (layers stacked into 4 frames: 2 leg poses × 2 tail
   phases, so the corkscrew tail spins as it walks).
@@ -113,7 +146,10 @@ The game has to read well on an NTSC composite CRT, not just VGA.
 - **Luma contrast:** composite blurs chroma, so every pair of colors that
   must be told apart (open vs. closed gate, stone vs. selected stone,
   reachable vs. unreachable tunnel) differs in brightness, not only hue.
-  The palette in `src/main.asm` lists each color's luma.
+  Every theme must step up tunnel < wall < stone < selected < lit by at
+  least 1.5 luma (of 15); `themes.inc` lists each theme's values. Bevels
+  and anti-aliasing stay within a class's own hue, so they don't add
+  chroma detail.
 - **No fine detail:** lines and gates are at least 3 px wide at 320×240,
   and text uses the standard (not thin) 8×8 font.
 - **240p:** `screen_mode` `$80` is 2× scaled, so the KERNAL enables VERA's

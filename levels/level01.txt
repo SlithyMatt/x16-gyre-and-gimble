@@ -9,11 +9,15 @@
 #
 # Optional gimbals (see level02.txt):
 #   gimbal: DRIVER > FOLLOWER +|-
+# Optional color theme from assets/themes.txt (default: the first):
+#   theme: NAME
 
 ring3: oc c  i  .  .  .  oi .  .  c  oc i
 ring2: .  .  oc c  c  i  .  i  .  oc i  .
 ring1: .  .  .  ic c  o  .  .  .  oi .  .
 ring0: o  .  .  oc i  .  .  .  oc -  .  .
+
+theme: noon
 
 # Starting rotation of each ring (outer to inner), in clockwise steps
 start: 3 8 8 3

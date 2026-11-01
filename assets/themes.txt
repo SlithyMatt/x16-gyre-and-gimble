@@ -1,0 +1,44 @@
+# Board color themes. A level picks one with "theme: NAME" (default: the
+# first). All themes share one small family of hues: earthy stone, slate
+# walls, peat-dark tunnels and a gold lit path, with the gimbal tints and
+# the burrow kept recognizable. tools/shading.py turns each class color
+# into a ramp of bevel and anti-aliasing shades. Gimbal teeth are drawn in
+# their ring's stone color.
+#
+#   CLASS R G B   (0-15 per channel)
+#
+# Composite TV: tunnel < wall < stone < sel < lit must step up in luma by
+# at least 1.5 each (the build checks), so the board reads in black and white.
+
+theme noon              # sandstone and slate in daylight
+stone    9  8  6
+sel     12 11  8
+follow   6 10 14
+counter 14  6 12
+tunnel   2  1  1
+lit     15 14  4
+wall     4  5  6
+burrow   1  5  2
+home    15 15 13
+
+theme brillig           # four o'clock in the afternoon: warmer, lower sun
+stone   10  7  4
+sel     13 10  6
+follow   6 10 14
+counter 14  6 12
+tunnel   2  1  0
+lit     15 13  3
+wall     5  4  5
+burrow   2  5  2
+home    15 14 11
+
+theme tulgey            # the tulgey wood: mossy stone in green shade
+stone    7  8  5
+sel     10 12  8
+follow   6 10 14
+counter 14  6 12
+tunnel   1  2  1
+lit     14 14  4
+wall     3  5  4
+burrow   1  6  3
+home    14 15 12

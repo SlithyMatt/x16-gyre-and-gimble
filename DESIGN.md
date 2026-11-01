@@ -26,7 +26,9 @@ its way home along that path.
 - **A move:** pick a ring and rotate it one step either way.
 - **Win:** a connected path runs from the entry to the burrow. The tove
   then walks it as a short animation.
-- **Scoring:** a move counter with a par for each level, giving 1–3 stars.
+- **Scoring:** a move counter with a par for each level, giving 1–3 stars:
+  3 at par, 2 at up to par + ⌊par/2⌋, otherwise 1. Undo subtracts a move.
+  The best rating per level is kept for the session (not saved yet).
 
 ## Planned twists (introduced level by level)
 
@@ -69,6 +71,11 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
   A rotation only rewrites the palette (≤384 bytes), never the bitmap, so
   it's effectively free.
 - **Layer 1:** text and tiles for the HUD (level, moves, par, stars).
+  The star glyphs (`assets/stars.txt`) are copied over unused graphics
+  characters of the charset after the lowercase switch, which reloads it:
+  a 2×2-character star for the solve and a 1-character star for the
+  session best. Earned and unearned stars are the same solid shape, in
+  yellow and gray, so they differ in luma.
 - **Sprites:** the tove (sprite 1; sprite 0 is the KERNAL mouse), 16×16
   4bpp with its own palette block (indices 176–191), at Z-depth 2: over
   the board, under the HUD text. Art is a text sprite sheet,

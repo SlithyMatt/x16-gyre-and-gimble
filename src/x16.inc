@@ -24,6 +24,7 @@ VERA_ISR        = $9F27
 VERA_DC_VIDEO   = $9F29
 VERA_DC_HSCALE  = $9F2A
 VERA_DC_VSCALE  = $9F2B
+VERA_L1_TILEBASE = $9F36
 
 VRAM_PALETTE    = $1FA00
 VERA_INC_1      = $10           ; ADDR_H auto-increment of 1

@@ -52,6 +52,13 @@ KEY_RIGHT       = $1d
 KEY_DEL         = $14
 KEY_RETURN      = $0d
 
+; Star ratings: 3 at par, 2 within par + par/2, else 1
+STAR_PETSCII    = $b0           ; CHROUT codes for the star glyphs ...
+STAR_SCREEN     = $70           ; ... and the screen codes they print as
+CLR_LIT         = $9e           ; yellow: earned
+CLR_DIM         = $98           ; gray: not earned (luma differs, not just hue)
+CLR_TEXT        = $05           ; white
+
 ; SNES pads: frames before a held D-pad direction repeats, then between repeats
 JOY_DELAY       = 18
 JOY_RATE        = 8
@@ -81,6 +88,7 @@ JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 .include "level.inc"
 .include "waypoints.inc"
 .include "tove.inc"
+.include "stars.inc"
 
 .segment "CODE"
 
@@ -99,6 +107,7 @@ start:
     inx
     bra @init
 @loaded:
+    jsr init_stars              ; after the charset switch, which reloads it
     jsr load_board
     bcc @go
     print_at SAFE_T, SAFE_L, s_load_failed
@@ -111,6 +120,10 @@ start:
     stz walking
     stz arrived
     stz level
+    ldx #NLEVELS-1
+:   stz best,x
+    dex
+    bpl :-
     stz joy0_prev
     stz joy1_prev
 .ifdef JOY_SCRIPT
@@ -673,10 +686,36 @@ arrive:
     stz walking
     lda #1
     sta arrived
-    stz tove_z
+    jsr rate
+    sta stars
+    ldx level
+    cmp best,x
+    bcc :+
+    sta best,x
+:    stz tove_z
     jsr set_tove
     jsr update_palette
     jmp draw_status
+
+; A = stars (1-3) earned by solving the level in `moves`
+rate:
+    lda lvl+LV_PAR
+    cmp moves
+    bcs @three
+    lsr a
+    clc
+    adc lvl+LV_PAR
+    bcs @two                    ; limit is past 255
+    cmp moves
+    bcs @two
+    lda #1
+    rts
+@two:
+    lda #2
+    rts
+@three:
+    lda #3
+    rts
 
 ; Load the board bitmap into VRAM $00000. Carry set on error.
 load_board:
@@ -1103,6 +1142,7 @@ draw_hud:
     lda level
     inc a
     jsr print_dec2
+    print_at SAFE_T+4, SAFE_L, s_best
     print_at SAFE_B-3, SAFE_L, s_help1
     print_at SAFE_B-2, SAFE_L, s_help2
     print_at SAFE_B-1, SAFE_L, s_help3
@@ -1117,10 +1157,22 @@ draw_status:
     jsr PLOT
     lda moves
     jsr print_dec3
+    ldx level                   ; best so far, small, under the level number
+    lda best,x
+    ldx #SAFE_T+5
+    ldy #SAFE_L
+    stz star_big
+    jsr draw_stars
     lda arrived
-    beq :+
-    print_at SAFE_T+2, SAFE_R-7, s_home1
+    bne :+
+    jmp @unsolved
+:   print_at SAFE_T+2, SAFE_R-7, s_home1
     print_at SAFE_T+3, SAFE_R-7, s_home2
+    lda stars                   ; this solve, big, under the message
+    ldx #SAFE_T+4
+    ldy #SAFE_R-5
+    sta star_big
+    jsr draw_stars
     lda level
     cmp #NLEVELS-1
     bcs @last
@@ -1131,10 +1183,83 @@ draw_status:
     print_at SAFE_B-2, SAFE_R-7, s_end1
     print_at SAFE_B-1, SAFE_R-7, s_end2
     rts
-:   print_at SAFE_T+2, SAFE_R-7, s_blank
+@unsolved:
+    print_at SAFE_T+2, SAFE_R-7, s_blank
     print_at SAFE_T+3, SAFE_R-7, s_blank
+    print_at SAFE_T+4, SAFE_R-7, s_blank
+    print_at SAFE_T+5, SAFE_R-7, s_blank
     print_at SAFE_B-2, SAFE_R-7, s_blank
     print_at SAFE_B-1, SAFE_R-7, s_blank
+    rts
+
+; Draw three stars at row X, column Y, the first A of them lit: 2x2
+; characters each if star_big is nonzero, else one character every other column
+draw_stars:
+    sta star_lit
+    stx star_row
+    sty star_col
+    lda #3
+    sta star_n
+@star:
+    ldx star_row
+    ldy star_col
+    clc
+    jsr PLOT
+    lda #CLR_DIM
+    ldx star_lit
+    beq :+
+    dec star_lit
+    lda #CLR_LIT
+:   jsr CHROUT
+    lda star_big
+    bne @big
+    lda #STAR_PETSCII+STAR_SMALL
+    jsr CHROUT
+    bra @next
+@big:
+    lda #STAR_PETSCII+STAR_BIG
+    jsr CHROUT
+    lda #STAR_PETSCII+STAR_BIG+1
+    jsr CHROUT
+    ldx star_row
+    inx
+    ldy star_col
+    clc
+    jsr PLOT
+    lda #STAR_PETSCII+STAR_BIG+2
+    jsr CHROUT
+    lda #STAR_PETSCII+STAR_BIG+3
+    jsr CHROUT
+@next:
+    inc star_col
+    inc star_col
+    dec star_n
+    bne @star
+    lda #CLR_TEXT
+    jmp CHROUT
+
+; Copy the star glyphs over unused graphics characters of layer 1's charset
+init_stars:
+    stz VERA_CTRL
+    lda VERA_L1_TILEBASE        ; bits 7:2 = tile base address bits 16:11
+    asl a
+    and #$f8
+    ora #>(STAR_SCREEN * 8)
+    sta VERA_ADDR_M
+    lda #<(STAR_SCREEN * 8)
+    sta VERA_ADDR_L
+    lda VERA_L1_TILEBASE
+    rol a                       ; bit 7 -> address bit 16
+    rol a
+    and #1
+    ora #VERA_INC_1
+    sta VERA_ADDR_H
+    ldx #0
+:   lda star_chars,x
+    sta VERA_DATA0
+    inx
+    cpx #STAR_CHARS * 8
+    bne :-
     rts
 
 ; Print the zero-terminated string at (ZP_PTR)
@@ -1246,6 +1371,7 @@ s_next2:        .byte "for next", 0
 s_end1:         .byte "The wabe", 0
 s_end2:         .byte "is clear", 0
 s_level:        .byte "Level ", 0
+s_best:         .byte "Best", 0
 s_blank:        .byte "        ", 0
 s_load_failed:  .byte "Can't load RINGS.BIN", 0
 
@@ -1302,6 +1428,13 @@ vis:            .res NCELLS
 sel:            .res 1
 moves:          .res 1
 won:            .res 1
+stars:          .res 1          ; rating of the last solve
+best:           .res NLEVELS    ; best rating per level this session (0 = none)
+star_big:       .res 1
+star_lit:       .res 1
+star_row:       .res 1
+star_col:       .res 1
+star_n:         .res 1
 hist_n:         .res 1
 hist:           .res 256
 tmp_r:          .res 1

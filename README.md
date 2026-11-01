@@ -43,6 +43,11 @@ Rings joined by brass gear teeth are linked by a **gimbal**: turning the
 driving ring also turns the next one. When you select a ring, any ring it
 will drag is tinted blue-grey (same direction) or mauve (opposite).
 
+Each solve earns **stars** against the level's par (the fewest moves
+possible): 3 at par, 2 within par plus half again (rounded down), otherwise 1.
+Undo takes a move back off the count. Your best rating for each level this
+session shows under the level number.
+
 ## Layout
 
 - `src/`: 65C02 assembly (`main.asm` is the entry point)
@@ -52,7 +57,9 @@ will drag is tinted blue-grey (same direction) or mauve (opposite).
   `keys LEVEL` prints a shortest solution as keystrokes.
 - `tools/gensprites.py`: compiles text sprite sheets (`assets/tove.txt`)
   into sprite frames and palette
-- `assets/`: sprite art, as editable text grids
+- `tools/genchars.py`: compiles text glyphs (`assets/stars.txt`) into
+  charset characters
+- `assets/`: sprite and glyph art, as editable text grids
 - `tools/joyscript.py`: generates the scripted pad for `make joytest`
 - `levels/`: level sources (the format is documented in `level01.txt`)
 - `build/`: build output (ignored by git)

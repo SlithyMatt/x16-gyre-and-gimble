@@ -92,9 +92,12 @@ JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 .include "tove.inc"
 .include "stars.inc"
 
+.import __BSS_RUN__, __BSS_SIZE__
+
 .segment "CODE"
 
 start:
+    jsr clear_bss               ; RUN again without LOAD must start fresh too
     sec
     jsr SCREEN_MODE
     sta saved_mode
@@ -118,19 +121,7 @@ start:
     beq :-
     jmp quit
 @go:
-    jsr init_tove
-    stz walking
-    stz arrived
-    stz level
-    ldx #NLEVELS-1
-:   stz best,x
-    dex
-    bpl :-
-    stz joy0_prev
-    stz joy1_prev
-.ifdef JOY_SCRIPT
-    stz joy_script_ptr+1
-.endif
+    jsr init_tove               ; all other state starts at zero (clear_bss)
     jsr reset_level
     ; fall through
 
@@ -717,6 +708,33 @@ rate:
     rts
 @three:
     lda #3
+    rts
+
+; Zero every variable in BSS. Nothing here may rely on the state a previous
+; run (or power-on) left in RAM.
+clear_bss:
+    lda #<__BSS_RUN__
+    sta ZP_PTR
+    lda #>__BSS_RUN__
+    sta ZP_PTR+1
+    ldx #>__BSS_SIZE__          ; whole pages
+    ldy #0
+    tya
+    cpx #0
+    beq @tail
+:   sta (ZP_PTR),y
+    iny
+    bne :-
+    inc ZP_PTR+1
+    dex
+    bne :-
+@tail:
+    ldy #<__BSS_SIZE__          ; then the rest
+    beq @done
+:   dey
+    sta (ZP_PTR),y
+    bne :-
+@done:
     rts
 
 ; Load the board bitmap into VRAM $00000. Carry set on error.

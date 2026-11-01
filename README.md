@@ -36,6 +36,9 @@ The game loads `RINGS.BIN` from the current device, so keep it next to `GYRE.PRG
 
 Any SNES controller in ports 1–4 works, and a held D-pad direction repeats.
 
+When the path connects, the tove walks home along it (Return or A skips
+the walk).
+
 Rings joined by brass gear teeth are linked by a **gimbal**: turning the
 driving ring also turns the next one. When you select a ring, any ring it
 will drag is tinted blue-grey (same direction) or mauve (opposite).
@@ -47,6 +50,9 @@ will drag is tinted blue-grey (same direction) or mauve (opposite).
 - `tools/level.py`: compiles the levels, checks that each is solvable and
   computes par. `suggest LEVEL N` finds starting rotations with par N, and
   `keys LEVEL` prints a shortest solution as keystrokes.
+- `tools/gensprites.py`: compiles text sprite sheets (`assets/tove.txt`)
+  into sprite frames and palette
+- `assets/`: sprite art, as editable text grids
 - `tools/joyscript.py`: generates the scripted pad for `make joytest`
 - `levels/`: level sources (the format is documented in `level01.txt`)
 - `build/`: build output (ignored by git)

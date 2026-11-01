@@ -8,7 +8,7 @@ BUILD   := build
 PRG     := $(BUILD)/$(NAME).PRG
 BOARD   := $(BUILD)/RINGS.BIN
 SOURCES := $(wildcard src/*.asm src/*.inc)
-GEN_INC := $(BUILD)/regions.inc $(BUILD)/level.inc
+GEN_INC := $(BUILD)/regions.inc $(BUILD)/waypoints.inc $(BUILD)/level.inc $(BUILD)/tove.inc
 
 .PHONY: all run clean joytest
 
@@ -20,8 +20,11 @@ $(PRG): $(SOURCES) $(GEN_INC) | $(BUILD)
 		-l $(BUILD)/$(NAME).list -m $(BUILD)/$(NAME).map -Ln $(BUILD)/$(NAME).sym \
 		src/main.asm
 
-$(BOARD) $(BUILD)/regions.inc &: tools/genrings.py | $(BUILD)
-	$(PYTHON) tools/genrings.py $(BOARD) $(BUILD)/regions.inc
+$(BOARD) $(BUILD)/regions.inc $(BUILD)/waypoints.inc &: tools/genrings.py | $(BUILD)
+	$(PYTHON) tools/genrings.py $(BOARD) $(BUILD)/regions.inc $(BUILD)/waypoints.inc
+
+$(BUILD)/tove.inc: tools/gensprites.py assets/tove.txt | $(BUILD)
+	$(PYTHON) tools/gensprites.py assets/tove.txt tove $@
 
 LEVELS  := $(sort $(wildcard levels/*.txt))
 

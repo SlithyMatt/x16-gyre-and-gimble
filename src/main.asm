@@ -8,6 +8,14 @@
 .include "x16.inc"
 .include "regions.inc"
 
+; Tove sprite
+TOVE_SPRITE     = 1             ; sprite 0 is the KERNAL mouse pointer
+TOVE_VRAM       = $13000        ; KERNAL's sprite image area in this mode
+TOVE_PAL        = 11            ; palette offset: indices 176-191 (board uses 16-165)
+TOVE_Z          = 2 << 2        ; Z-depth 2: over the board, under the HUD text
+WALK_STEPS      = 8             ; frames per waypoint segment (make_step assumes 8)
+VRAM_SPRITES    = $1FC00
+
 ; Cell bits (match tools/level.py)
 IN              = $01
 OUT             = $02
@@ -71,6 +79,8 @@ JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 .segment "RODATA"
 
 .include "level.inc"
+.include "waypoints.inc"
+.include "tove.inc"
 
 .segment "CODE"
 
@@ -97,6 +107,9 @@ start:
     beq :-
     jmp quit
 @go:
+    jsr init_tove
+    stz walking
+    stz arrived
     stz level
     stz joy0_prev
     stz joy1_prev
@@ -123,9 +136,12 @@ main_loop:
     beq main_loop
     sta last_jiffy
     jsr poll_joy
+    jsr tick_tove
     bra main_loop
 
 quit:
+    stz tove_z                  ; hide the tove before handing back to BASIC
+    jsr set_tove
     lda saved_mode
     clc
     jsr SCREEN_MODE
@@ -203,6 +219,11 @@ handle_key:
 @advance:
     lda won
     beq @ignore
+    lda arrived
+    bne @next
+    jsr arrive                  ; still walking: skip to the end
+    clc
+    rts
 @next:
     lda level
     inc a
@@ -353,6 +374,310 @@ script_joy:
     rts
 .endif
 
+;
+; The tove
+;
+; It idles at the entry gap. When the board is solved it walks the BFS path
+; from flood through gates and cell centers (tables from tools/genrings.py)
+; to the burrow, then vanishes into it.
+
+; Copy the tove's frames and palette to VRAM and enable sprites
+init_tove:
+    stz VERA_CTRL
+    lda #<TOVE_VRAM
+    sta VERA_ADDR_L
+    lda #>TOVE_VRAM
+    sta VERA_ADDR_M
+    lda #^TOVE_VRAM | VERA_INC_1
+    sta VERA_ADDR_H
+    lda #<tove_frames
+    sta ZP_PTR
+    lda #>tove_frames
+    sta ZP_PTR+1
+    ldx #TOVE_FRAMES / 2        ; 128 bytes per frame: 256 per pass
+    ldy #0
+:   lda (ZP_PTR),y
+    sta VERA_DATA0
+    iny
+    bne :-
+    inc ZP_PTR+1
+    dex
+    bne :-
+    lda #<(VRAM_PALETTE + (TOVE_PAL * 16 + 1) * 2)
+    sta VERA_ADDR_L
+    lda #>(VRAM_PALETTE + (TOVE_PAL * 16 + 1) * 2)
+    sta VERA_ADDR_M
+    lda #^(VRAM_PALETTE + (TOVE_PAL * 16 + 1) * 2) | VERA_INC_1
+    sta VERA_ADDR_H
+    ldx #0
+:   lda tove_pal,x
+    sta VERA_DATA0
+    inx
+    cpx #tove_frames - tove_pal
+    bne :-
+    lda VERA_DC_VIDEO
+    ora #$40                    ; sprites on
+    sta VERA_DC_VIDEO
+    rts
+
+; Stand the tove at the entry gap
+tove_idle:
+    lda #ENTRY_X - 8
+    sta tove_x
+    lda #ENTRY_Y - 8
+    sta tove_y
+    stz tove_flip
+    lda #TOVE_Z
+    sta tove_z
+    jmp set_tove
+
+; Write the tove's sprite attributes from tove_x/y/frame/flip/z
+set_tove:
+    stz VERA_CTRL
+    lda #<(VRAM_SPRITES + TOVE_SPRITE * 8)
+    sta VERA_ADDR_L
+    lda #>(VRAM_SPRITES + TOVE_SPRITE * 8)
+    sta VERA_ADDR_M
+    lda #^(VRAM_SPRITES + TOVE_SPRITE * 8) | VERA_INC_1
+    sta VERA_ADDR_H
+    lda tove_frame              ; 128-byte frames = 4 address units of 32
+    asl a
+    asl a
+    clc
+    adc #<(TOVE_VRAM >> 5)
+    sta VERA_DATA0
+    lda #>(TOVE_VRAM >> 5)      ; address bits 16:13, mode 0 = 4bpp
+    sta VERA_DATA0
+    lda tove_x
+    sta VERA_DATA0
+    stz VERA_DATA0
+    lda tove_y
+    sta VERA_DATA0
+    stz VERA_DATA0
+    lda tove_z
+    ora tove_flip
+    sta VERA_DATA0
+    lda #%01010000 | TOVE_PAL   ; 16x16
+    sta VERA_DATA0
+    rts
+
+; Once per frame: move and animate the tove
+tick_tove:
+    inc anim
+    lda walking
+    beq @idle
+    clc
+    lda posx
+    adc stepx
+    sta posx
+    lda posx+1
+    adc stepx+1
+    sta posx+1
+    clc
+    lda posy
+    adc stepy
+    sta posy
+    lda posy+1
+    adc stepy+1
+    sta posy+1
+    dec seg_count
+    bne :+
+    jsr next_segment
+    lda walking
+    beq @done                   ; arrived
+:   lda anim                    ; walk cycle: frames 0-3, 4 jiffies each
+    lsr a
+    lsr a
+    and #3
+    sta tove_frame
+    lda posx+1
+    sec
+    sbc #8
+    sta tove_x
+    lda posy+1
+    sec
+    sbc #8
+    sta tove_y
+    jmp set_tove
+@idle:
+    lda arrived
+    bne @done
+    lda anim                    ; idle: tail turns every 16 jiffies (frames 0, 2)
+    and #$10
+    lsr a
+    lsr a
+    lsr a
+    sta tove_frame
+    jmp set_tove
+@done:
+    rts
+
+; Build the waypoint list for the path ending at goal and start walking
+start_walk:
+    ldx goal                    ; path cells, goal back to the entry
+    ldy #0
+:   txa
+    sta path,y
+    iny
+    cpx #ENTRY_K
+    beq :+
+    lda parent,x
+    tax
+    bra :-
+:   sty path_n
+    stz wp_n
+    lda #ENTRY_X
+    ldy #ENTRY_Y
+    jsr add_wp
+    ldy path_n
+    dey                         ; the entry cell
+    ldx path,y
+    phy
+    jsr add_center
+    ply
+@cell:
+    dey
+    bmi @last
+    stx prev_k
+    ldx path,y
+    phy
+    jsr add_gate
+    jsr add_center
+    ply
+    bra @cell
+@last:
+    ldx goal                    ; through the burrow gate, into the burrow
+    lda wp_rx,x
+    ldy wp_ry,x
+    jsr add_wp
+    lda #BURROW_X
+    ldy #BURROW_Y
+    jsr add_wp
+    lda #1
+    sta walking
+    stz arrived
+    stz wp_i
+    jmp start_segment
+
+; Append waypoint (A, Y). Preserves X.
+add_wp:
+    phx
+    ldx wp_n
+    sta wp_x,x
+    tya
+    sta wp_y,x
+    inc wp_n
+    plx
+    rts
+
+add_center:
+    lda wp_cx,x
+    ldy wp_cy,x
+    jmp add_wp
+
+; Append the gate between cells prev_k and X. Preserves X.
+add_gate:
+    txa
+    sec
+    sbc prev_k
+    cmp #CELLS
+    beq @radial                 ; X is the outer cell: its inner gate
+    cmp #<-CELLS
+    beq @radial_prev
+    cmp #1
+    beq @arc_prev               ; X is clockwise of prev_k: prev_k's arc gate
+    cmp #<-(CELLS-1)
+    beq @arc_prev
+    lda wp_ax,x                 ; X is counter-clockwise: X's arc gate
+    ldy wp_ay,x
+    jmp add_wp
+@radial:
+    lda wp_rx,x
+    ldy wp_ry,x
+    jmp add_wp
+@radial_prev:
+    phx
+    ldx prev_k
+    lda wp_rx,x
+    ldy wp_ry,x
+    bra @prev
+@arc_prev:
+    phx
+    ldx prev_k
+    lda wp_ax,x
+    ldy wp_ay,x
+@prev:
+    jsr add_wp
+    plx
+    rts
+
+; Advance to the next waypoint segment, or arrive after the last one
+next_segment:
+    inc wp_i
+    ; fall through
+
+; Start walking from waypoint wp_i to wp_i + 1
+start_segment:
+    ldx wp_i
+    inx
+    cpx wp_n
+    bcc :+
+    jmp arrive
+:   lda wp_x-1,x
+    sta posx+1
+    stz posx
+    lda wp_y-1,x
+    sta posy+1
+    stz posy
+    lda wp_x,x
+    sec
+    sbc wp_x-1,x
+    beq :+                      ; straight up/down: keep facing
+    pha
+    asl a                       ; sign to carry: moving left = flip
+    lda #0
+    rol a
+    sta tove_flip
+    pla
+:   jsr make_step
+    sta stepx
+    sty stepx+1
+    ldx wp_i
+    lda wp_y+1,x
+    sec
+    sbc wp_y,x
+    jsr make_step
+    sta stepy
+    sty stepy+1
+    lda #WALK_STEPS
+    sta seg_count
+    rts
+
+; A = signed pixel distance -> A/Y = 8.8 step per frame (distance * 256 / 8)
+make_step:
+    ldy #0
+    cmp #$80
+    bcc :+
+    dey
+:   sty step_hi
+    ldy #5
+:   asl a
+    rol step_hi
+    dey
+    bne :-
+    ldy step_hi
+    rts
+
+; The tove is home: hide it, light the burrow, show the message
+arrive:
+    stz walking
+    lda #1
+    sta arrived
+    stz tove_z
+    jsr set_tove
+    jsr update_palette
+    jmp draw_status
+
 ; Load the board bitmap into VRAM $00000. Carry set on error.
 load_board:
     lda #1
@@ -395,6 +720,17 @@ reset_level:
 refresh:
     jsr compute_scr
     jsr flood
+    lda won
+    bne :+
+    stz walking                 ; not (or no longer) solved: tove waits at the entry
+    stz arrived
+    jsr tove_idle
+    bra @draw
+:   lda walking
+    ora arrived
+    bne @draw
+    jsr start_walk              ; just solved: walk home
+@draw:
     jsr update_palette
     jmp draw_status
 
@@ -513,8 +849,10 @@ compute_scr:
     bne @ring
     rts
 
-; Mark every screen cell reachable from the entry in vis; set won if the
-; burrow is reachable. Must match solved() in tools/level.py.
+; Breadth-first search from the entry: mark every reachable screen cell in
+; vis with its parent in parent, and set won/goal at the first ring 0 cell
+; that opens into the burrow (so goal ends a shortest path). Must match
+; Level.solved() in tools/level.py.
 flood:
     ldx #NCELLS-1
 :   stz vis,x
@@ -527,113 +865,96 @@ flood:
     rts                         ; entry closed: nothing reachable
 :   lda #1
     sta vis+ENTRY_K
-@pass:
-    stz changed
-    ldx #0                      ; X = cell index, Y = position in ring
-    ldy #0
-@cell:
-    lda vis,x
-    bne @cw
-    jmp @next
-@cw:
+    lda #ENTRY_K
+    sta parent+ENTRY_K
+    sta queue
+    stz q_head
+    lda #1
+    sta q_tail
+@next:
+    ldy q_head
+    cpy q_tail
+    bne :+
+    rts
+:   lda queue,y
+    inc q_head
+    tax                         ; X = current cell
+    cpx #CELLS                  ; ring 0 opening inward: the burrow
+    bcs @cw
     lda scr,x
+    and #IN
+    beq @cw
+    lda won
+    bne @cw
+    inc won
+    stx goal
+@cw:
+    lda scr,x                   ; clockwise neighbor
     and #CW
     beq @ccw
+    lda pos_of,x
+    cmp #CELLS-1
     txa
-    inc a
-    cpy #CELLS-1
-    bne :+
-    sec
-    sbc #CELLS
-:   jsr visit
+    bcc :+
+    sbc #CELLS                  ; carry set: wrap from position 11 to 0
+:   inc a
+    jsr enqueue
 @ccw:
+    lda pos_of,x                ; counter-clockwise neighbor, if it opens to us
+    cmp #1
     txa
-    dec a
-    cpy #0
-    bne :+
-    clc
-    adc #CELLS
-:   phx
-    tax
-    lda scr,x
+    bcs :+
+    adc #CELLS                  ; carry clear: wrap from position 0 to 11
+:   dec a
+    tay
+    lda scr,y
     and #CW
-    beq @ccw_no
-    txa
-    plx
-    jsr visit
-    bra @in
-@ccw_no:
-    plx
+    beq @in
+    tya
+    jsr enqueue
 @in:
+    cpx #CELLS
+    bcc @out
     lda scr,x
     and #IN
     beq @out
-    cpx #CELLS
-    bcs @in_ring
-    lda #1                      ; ring 0 opening inward: burrow reached
-    sta won
-    bra @out
-@in_ring:
+    lda scr-CELLS,x
+    and #OUT
+    beq @out
     txa
     sec
     sbc #CELLS
-    phx
-    tax
-    lda scr,x
-    and #OUT
-    beq @in_no
-    txa
-    plx
-    jsr visit
-    bra @out
-@in_no:
-    plx
+    jsr enqueue
 @out:
     cpx #NCELLS-CELLS
-    bcs @next
+    bcs @done
     lda scr,x
     and #OUT
-    beq @next
+    beq @done
+    lda scr+CELLS,x
+    and #IN
+    beq @done
     txa
     clc
     adc #CELLS
-    phx
-    tax
-    lda scr,x
-    and #IN
-    beq @out_no
-    txa
-    plx
-    jsr visit
-    bra @next
-@out_no:
-    plx
-@next:
-    inx
-    iny
-    cpy #CELLS
-    bne :+
-    ldy #0
-:   cpx #NCELLS
-    beq :+
-    jmp @cell
-:   lda changed
-    beq @done
-    jmp @pass
+    jsr enqueue
 @done:
-    rts
+    jmp @next
 
-; Mark cell A visited. Preserves X and Y.
-visit:
-    phx
-    tax
-    lda vis,x
+; Queue cell A with parent X if it hasn't been seen. Preserves X.
+enqueue:
+    tay
+    lda vis,y
     bne :+
     lda #1
-    sta vis,x
-    sta changed
-:   plx
-    rts
+    sta vis,y
+    txa
+    sta parent,y
+    tya
+    ldy q_tail
+    sta queue,y
+    inc q_tail
+:   rts
 
 ; Recolor every board region from scr/vis/sel/won
 update_palette:
@@ -726,7 +1047,7 @@ update_palette:
 :   lda #C_WALL
 :   jsr put_color
 
-    lda won
+    lda arrived
     beq :+
     lda #C_HOME
     bra :++
@@ -796,7 +1117,7 @@ draw_status:
     jsr PLOT
     lda moves
     jsr print_dec3
-    lda won
+    lda arrived
     beq :+
     print_at SAFE_T+2, SAFE_R-7, s_home1
     print_at SAFE_T+3, SAFE_R-7, s_home2
@@ -895,6 +1216,11 @@ ring_of:
     .byte i / CELLS
 .endrepeat
 
+pos_of:
+.repeat NCELLS, i
+    .byte i .mod CELLS
+.endrepeat
+
 init_text:
     .byte $0e                   ; upper/lowercase charset
     .byte $90, $01, $05         ; black, swap (black background), white text
@@ -926,6 +1252,32 @@ s_load_failed:  .byte "Can't load RINGS.BIN", 0
 .segment "BSS"
 
 saved_mode:     .res 1
+parent:         .res NCELLS
+queue:          .res NCELLS
+q_head:         .res 1
+q_tail:         .res 1
+goal:           .res 1
+path:           .res NCELLS     ; goal first, entry last
+path_n:         .res 1
+prev_k:         .res 1
+wp_x:           .res 2 * NCELLS + 4
+wp_y:           .res 2 * NCELLS + 4
+wp_n:           .res 1
+wp_i:           .res 1
+walking:        .res 1
+arrived:        .res 1
+posx:           .res 2          ; 8.8 fixed point
+posy:           .res 2
+stepx:          .res 2
+stepy:          .res 2
+step_hi:        .res 1
+seg_count:      .res 1
+anim:           .res 1
+tove_x:         .res 1          ; sprite top-left
+tove_y:         .res 1
+tove_frame:     .res 1
+tove_flip:      .res 1
+tove_z:         .res 1
 last_jiffy:     .res 1
 joy_pad:        .res 1
 joy0:           .res 1
@@ -950,7 +1302,6 @@ vis:            .res NCELLS
 sel:            .res 1
 moves:          .res 1
 won:            .res 1
-changed:        .res 1
 hist_n:         .res 1
 hist:           .res 256
 tmp_r:          .res 1

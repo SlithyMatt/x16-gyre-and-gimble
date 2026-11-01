@@ -69,8 +69,21 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
   A rotation only rewrites the palette (≤384 bytes), never the bitmap, so
   it's effectively free.
 - **Layer 1:** text and tiles for the HUD (level, moves, par, stars).
-- **Sprites:** the tove, the ring-selection cursor and hazards. Their
-  positions come from a precomputed table of cell centers.
+- **Sprites:** the tove (sprite 1; sprite 0 is the KERNAL mouse), 16×16
+  4bpp with its own palette block (indices 176–191), at Z-depth 2: over
+  the board, under the HUD text. Art is a text sprite sheet,
+  `assets/tove.txt` (layers stacked into 4 frames: 2 leg poses × 2 tail
+  phases, so the corkscrew tail spins as it walks).
+  - It idles at the entry gap, tail turning.
+  - When the board is solved, it walks the shortest path home: the
+    reachability search is a BFS that records parents, and the path runs
+    through gate and cell-center waypoints that `tools/genrings.py`
+    precomputes. Each segment takes 8 frames, in 8.8 fixed point, and the
+    tove flips to face its direction of travel.
+  - When it reaches the burrow it disappears, the burrow glows and the
+    message appears. Return/A skips the walk; undo or restart cancels it.
+  - Ring selection stays a palette highlight (no cursor sprite needed).
+    Hazards will be sprites too.
 - **Later:** smoother rotation by drawing 24 screen positions per ring
   (cells 2 positions wide), which allows a half-step frame.
 

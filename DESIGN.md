@@ -65,11 +65,19 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
   build time by a Python tool and loaded straight into VRAM.
 - **Palette trick:** every pixel's color index identifies a fixed *screen
   region*: one region per on-screen cell body, inner half-gate, outer
-  half-gate and arc gate (4 rings × 12 cells × 4 regions = 192 entries).
+  half-gate and arc gate (4 rings × 12 cells × 4 regions = 192 entries,
+  indices 16–213; the tove's sprite palette is 224–239).
   To show the board, the game writes each region's palette entry as tunnel
   or stone, according to which cell is currently rotated into that position.
   A rotation only rewrites the palette (≤384 bytes), never the bitmap, so
   it's effectively free.
+- **Readable openings:** every cell shows its own openings, so the player
+  can see what a rotation will line up. An open side is a notch that
+  reaches halfway across the 8 px wall between rings: an inward opening
+  through the outer half of the wall below the cell, an outward one
+  through the inner half of the wall above it. Two notches that meet make a
+  passage. The outer ring's outward openings notch the rim, and only the
+  entry cuts all the way through it.
 - **Layer 1:** text and tiles for the HUD (level, moves, par, stars).
   The star glyphs (`assets/stars.txt`) are copied over unused graphics
   characters of the charset after the lowercase switch, which reloads it:

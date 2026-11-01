@@ -11,7 +11,7 @@
 ; Tove sprite
 TOVE_SPRITE     = 1             ; sprite 0 is the KERNAL mouse pointer
 TOVE_VRAM       = $13000        ; KERNAL's sprite image area in this mode
-TOVE_PAL        = 11            ; palette offset: indices 176-191 (board uses 16-165)
+TOVE_PAL        = 14            ; palette offset: indices 224-239 (board uses 16-213)
 TOVE_Z          = 2 << 2        ; Z-depth 2: over the board, under the HUD text
 WALK_STEPS      = 8             ; frames per waypoint segment (make_step assumes 8)
 VRAM_SPRITES    = $1FC00
@@ -64,12 +64,14 @@ JOY_DELAY       = 18
 JOY_RATE        = 8
 JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 
-.assert REG_RGATE = REG_BODY + NCELLS, error, "palette regions must be contiguous"
-.assert REG_AGATE = REG_RGATE + NCELLS, error, "palette regions must be contiguous"
+.assert REG_IN_STUB = REG_BODY + NCELLS, error, "palette regions must be contiguous"
+.assert REG_OUT_STUB = REG_IN_STUB + NCELLS, error, "palette regions must be contiguous"
+.assert REG_AGATE = REG_OUT_STUB + NCELLS, error, "palette regions must be contiguous"
 .assert REG_ENTRY = REG_AGATE + NCELLS, error, "palette regions must be contiguous"
 .assert REG_BURROW = REG_ENTRY + 1, error, "palette regions must be contiguous"
 .assert REG_WALL = REG_BURROW + 1, error, "palette regions must be contiguous"
 .assert REG_TEETH = REG_WALL + 1, error, "palette regions must be contiguous"
+.assert REG_TEETH + RINGS - 1 <= TOVE_PAL * 16, error, "board regions overlap the tove's palette"
 
 .macro print_at row, col, str
     ldx #row
@@ -1042,26 +1044,10 @@ update_palette:
     cpx #NCELLS
     bne @body
 
-    ldx #0                      ; radial gates, inner side of each cell
-@rgate:
-    lda scr,x
-    and #IN
-    beq @rgate_closed
-    cpx #CELLS
-    bcc @rgate_open
-    lda scr-CELLS,x
-    and #OUT
-    beq @rgate_closed
-@rgate_open:
-    jsr open_color
-    bra @rgate_put
-@rgate_closed:
-    lda #C_WALL
-@rgate_put:
-    jsr put_color
-    inx
-    cpx #NCELLS
-    bne @rgate
+    lda #IN                     ; notches for each cell's inward openings ...
+    jsr put_stubs
+    lda #OUT                    ; ... and outward ones
+    jsr put_stubs
 
     ldx #0                      ; arc gates, clockwise side of each cell
 @agate:
@@ -1077,14 +1063,8 @@ update_palette:
     cpx #NCELLS
     bne @agate
 
-    ldx #ENTRY_K
-    lda scr,x
-    and #OUT
-    beq :+
-    jsr open_color
-    bra :++
-:   lda #C_WALL
-:   jsr put_color
+    lda #C_LIT                  ; the entry is always open: the tove starts there
+    jsr put_color
 
     lda arrived
     beq :+
@@ -1106,6 +1086,23 @@ update_palette:
     inx
     cpx #RINGS-1
     bne @teeth
+    rts
+
+; Write a notch color for every cell: open if the cell has opening A
+put_stubs:
+    sta tmp_b
+    ldx #0
+@stub:
+    lda scr,x
+    and tmp_b
+    beq :+
+    jsr open_color
+    bra :++
+:   lda #C_WALL
+:   jsr put_color
+    inx
+    cpx #NCELLS
+    bne @stub
     rts
 
 ; A = color for an open tunnel at cell X (lit if reachable)

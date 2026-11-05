@@ -22,6 +22,32 @@ make joytest  # replays a scripted SNES pad through every level
 
 The game loads `RINGS.BIN` and `CELLS.BIN` from the current device, so keep them next to `GYRE.PRG`.
 
+## Gameplay
+
+<img src="docs/level1.png" width="400" alt="Level 1 at the start: four rings of stone and tunnel around the burrow, the tove waiting at the gap in the rim">
+
+Turn the rings until a tunnel runs from the gap in the outer rim to the
+burrow at the center. The notches in each cell's walls show where its
+tunnel opens.
+
+<img src="docs/walk.png" width="400" alt="Level 1 solved: the connected tunnel glows yellow and the tove walks along it">
+
+When the path connects, it lights up and the tove walks home along it
+(Return or A skips the walk).
+
+<img src="docs/gimbal.png" width="400" alt="Level 2: the outer ring is selected and the ring inside it, meshed by gear teeth, is tinted blue">
+
+Rings whose gear teeth mesh are linked by a **gimbal**: turning the
+driving ring also turns the next one. When you select a ring, any ring it
+will drag, teeth and all, is tinted blue (same direction) or mauve (opposite).
+
+<img src="docs/solved.png" width="400" alt="Level 3 solved at par with three stars">
+
+Each solve earns **stars** against the level's par (the fewest moves
+possible): 3 at par, 2 within par plus half again (rounded down), otherwise 1.
+Undo takes a move back off the count. Your best rating for each level this
+session shows under the level number.
+
 ## Controls
 
 | Keyboard | SNES pad | Action |
@@ -35,18 +61,6 @@ The game loads `RINGS.BIN` and `CELLS.BIN` from the current device, so keep them
 | Q | | Quit to BASIC |
 
 Any SNES controller in ports 1–4 works, and a held D-pad direction repeats.
-
-When the path connects, the tove walks home along it (Return or A skips
-the walk).
-
-Rings whose gear teeth mesh are linked by a **gimbal**: turning the
-driving ring also turns the next one. When you select a ring, any ring it
-will drag, teeth and all, is tinted blue (same direction) or mauve (opposite).
-
-Each solve earns **stars** against the level's par (the fewest moves
-possible): 3 at par, 2 within par plus half again (rounded down), otherwise 1.
-Undo takes a move back off the count. Your best rating for each level this
-session shows under the level number.
 
 ## Layout
 
@@ -64,6 +78,7 @@ session shows under the level number.
   charset characters
 - `assets/`: sprite and glyph art, as editable text grids
 - `tools/joyscript.py`: generates the scripted pad for `make joytest`
+- `docs/`: README screenshots, captured in x16emu
 - `levels/`: level sources (the format is documented in `level01.txt`)
 - `build/`: build output (ignored by git)
 

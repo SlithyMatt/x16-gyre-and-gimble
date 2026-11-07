@@ -141,10 +141,12 @@ def parse_themes(path):
             cur = themes[toks[1]] = {}
         elif cur is not None and toks[0] in CLASSES and len(toks) == 4:
             cur[toks[0]] = tuple(int(t) for t in toks[1:])
+        elif cur is not None and toks[0] == "music" and len(toks) == 2:
+            cur["music"] = toks[1]
         else:
             raise SystemExit(f"{path}: bad line {line!r}")
     for name, t in themes.items():
-        missing = [c for c in CLASSES if c not in t]
+        missing = [c for c in CLASSES + ("music",) if c not in t]
         if missing:
             raise SystemExit(f"{path}: theme {name} lacks {' '.join(missing)}")
         lumas = [luma(t[c]) for c in LUMA_ORDER]

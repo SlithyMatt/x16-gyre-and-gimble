@@ -1,0 +1,24 @@
+# Victory fanfare: the tove is home. Plays once (1.8 s), then silence until
+# the next level. Original.
+#
+# Format: see tools/genmusic.py. One unit is a sixteenth note; the whole
+# fanfare is one bar.
+
+title Fanfare
+unit 6
+bar 18
+key C
+once
+
+voice melody psg brass
+G c e g3 e g c'7 z3 |
+voice harmony psg brass
+E G c e3 c e g7 z3 |
+voice bass psg bass
+C,3 C,3 G,,1 G,,1 C,7 z3 |
+
+# YM2151, when present: a ringing bell on top, strings and bass beneath
+voice bell ym bell copy melody
+voice pad ym pad width 3
+[CEG]15 z3 |
+voice fmbass ym bass copy bass

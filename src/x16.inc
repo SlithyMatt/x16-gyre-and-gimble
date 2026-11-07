@@ -11,6 +11,12 @@ PLOT            = $FFF0
 SCREEN_MODE     = $FF5F
 JOYSTICK_GET    = $FF56
 RDTIM           = $FFDE
+JSRFAR          = $FF6E         ; jsr JSRFAR / .word addr / .byte ROM bank
+CINV            = $0314         ; IRQ vector (RAM)
+
+; Audio ROM bank
+AUDIO_BANK      = $0A
+ym_init         = $C063         ; carry set if the YM2151 doesn't respond
 
 ; VERA registers
 VERA_ADDR_L     = $9F20
@@ -28,6 +34,13 @@ VERA_L1_TILEBASE = $9F36
 VERA_AUDIO_CTRL = $9F3B
 VERA_AUDIO_RATE = $9F3C
 VERA_AUDIO_DATA = $9F3D
+VERA_ISR_VSYNC  = $01
+
+VRAM_PSG        = $1F9C0        ; 16 voices x 4 bytes: freq lo/hi, RL|volume, waveform|width
+
+; YM2151
+YM_ADDR         = $9F40
+YM_DATA         = $9F41         ; read: bit 7 = busy
 
 VRAM_PALETTE    = $1FA00
 VERA_INC_1      = $10           ; ADDR_H auto-increment of 1

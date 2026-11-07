@@ -22,6 +22,10 @@ AUDIO_VOLUME    = 12              ; 13+ clips full-scale samples (measured in x1
 AUDIO_RESET     = $80           ; VERA_AUDIO_CTRL: write to empty the FIFO
 .assert SOUND_BANK + SOUND_BANKS <= 64, error, "sounds need more high RAM than the minimum 512 KB"
 
+; Background music (see tools/genmusic.py)
+YM_TIMEOUT      = 64            ; busy polls before deciding there's no YM2151
+NO_TUNE         = $ff
+
 ; Garden critters: borogoves and mome raths (see assets/critters.txt)
 CRITTER_SPRITE  = 2             ; sprites 2-5, under the tove
 NCRITTERS       = 4
@@ -50,6 +54,7 @@ KEY_CLASS       = $70           ; drawn-cell key: class palette row << 4
 ; Zero page (ZP_PTR is the general pointer)
 ZP_THEME        = $24           ; the level's theme palette data
 ZP_CLASS        = $26           ; class row << 4 for draw_piece
+ZP_MUSIC        = $28           ; the music interrupt's pointer
 
 PALETTE_ROW     = 32            ; bytes per palette row
 
@@ -105,6 +110,7 @@ JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 .include "stars.inc"
 .include "critters.inc"
 .include "sounds.inc"
+.include "music.inc"
 
 .import __BSS_RUN__, __BSS_SIZE__
 
@@ -142,6 +148,7 @@ start:
 @go:
     jsr init_tove               ; all other state starts at zero (clear_bss)
     jsr init_critters
+    jsr init_music
     jsr reset_level
     ; fall through
 
@@ -167,6 +174,7 @@ main_loop:
     bra main_loop
 
 quit:
+    jsr stop_music
     stz VERA_AUDIO_RATE         ; silence
     lda #AUDIO_RESET
     sta VERA_AUDIO_CTRL
@@ -233,6 +241,8 @@ handle_key:
     beq @next
     cmp #'p'
     beq @prev
+    cmp #'m'
+    beq @music
     cmp #'q'
     beq @quit
 @ignore:
@@ -240,6 +250,13 @@ handle_key:
     rts
 @quit:
     sec
+    rts
+@music:
+    lda music_off
+    eor #1
+    sta music_off
+    jsr want_music
+    clc
     rts
 @turn:
     ldx won
@@ -721,6 +738,7 @@ arrive:
     sta best,x
 :    stz tove_z
     jsr set_tove
+    jsr want_fanfare
     jsr update_palette
     jmp draw_status
 
@@ -980,6 +998,412 @@ load_garden:
     bne :-
     rts
 
+;
+; Background music
+;
+; Each theme has a tune (tools/genmusic.py): a set of channels, each a loop
+; of (note, frames) pairs for one PSG voice or YM2151 channel, all the same
+; length so they stay in step. The PSG channels are the whole arrangement;
+; the YM channels join in when the chip is there. A VSYNC interrupt steps
+; every channel once per frame, so the music keeps time while a move
+; redraws the board. The main code only asks for a tune (music_want).
+
+; Find the YM2151, then hook the interrupt
+init_music:
+.ifdef NO_YM
+    stz has_ym                  ; test build: as if there were no YM2151
+.else
+    jsr JSRFAR
+    .word ym_init
+    .byte AUDIO_BANK
+    lda #0
+    rol a
+    eor #1
+    sta has_ym
+.endif
+    lda #NO_TUNE
+    sta music_cur
+    sta music_want
+    sei
+    lda CINV
+    sta old_irq
+    lda CINV+1
+    sta old_irq+1
+    lda #<music_irq
+    sta CINV
+    lda #>music_irq
+    sta CINV+1
+    cli
+    rts
+
+; Unhook the interrupt and silence everything
+stop_music:
+    sei
+    lda old_irq
+    sta CINV
+    lda old_irq+1
+    sta CINV+1
+    cli
+    jmp silence
+
+; Ask for the level theme's tune: none if the player turned music off, or
+; once the tove is home (the fanfare has played)
+want_music:
+    lda #NO_TUNE
+    ldx music_off
+    bne :+
+    ldx arrived
+    bne :+
+    ldx lvl+LV_THEME
+    lda theme_tune,x
+:   sta music_want
+    rts
+
+; The tove is home: play the fanfare (once), unless music is off
+want_fanfare:
+    lda #NO_TUNE
+    ldx music_off
+    bne :+
+    lda #TUNE_FANFARE
+:   sta music_want
+    rts
+
+; Once per frame, on VSYNC: step the music, then on to the KERNAL's handler.
+; The main code may be partway through setting a VERA address, so keep it.
+music_irq:
+    lda VERA_ISR
+    and #VERA_ISR_VSYNC
+    beq @chain
+    lda VERA_CTRL
+    pha
+    stz VERA_CTRL
+    lda VERA_ADDR_L
+    pha
+    lda VERA_ADDR_M
+    pha
+    lda VERA_ADDR_H
+    pha
+    jsr tick_music
+    stz VERA_CTRL
+    pla
+    sta VERA_ADDR_H
+    pla
+    sta VERA_ADDR_M
+    pla
+    sta VERA_ADDR_L
+    pla
+    sta VERA_CTRL
+@chain:
+    jmp (old_irq)
+
+tick_music:
+    lda music_want
+    cmp music_cur
+    beq :+
+    jsr start_tune
+:   lda music_cur
+    cmp #NO_TUNE
+    beq @done
+    ldx #0
+@channel:
+    cpx music_n
+    beq @done
+    lda ch_hw,x
+    bpl :+
+    lda has_ym                  ; YM channels only with a YM2151
+    beq @next
+:   dec ch_left,x
+    bne :+
+    jsr next_note
+:   lda ch_hw,x
+    bmi @next
+    jsr psg_envelope
+@next:
+    inx
+    bra @channel
+@done:
+    rts
+
+; Silence the old tune and set up music_want's channels
+start_tune:
+    jsr silence
+    lda music_want
+    sta music_cur
+    cmp #NO_TUNE
+    beq @done
+    tax
+    lda tune_lo,x
+    sta ZP_MUSIC
+    lda tune_hi,x
+    sta ZP_MUSIC+1
+    ldy #0
+    lda (ZP_MUSIC),y
+    sta music_n
+    iny
+    ldx #0
+@channel:
+    lda (ZP_MUSIC),y
+    sta ch_hw,x
+    iny
+    lda (ZP_MUSIC),y
+    sta ch_instr,x
+    iny
+    lda (ZP_MUSIC),y
+    sta ch_start_lo,x
+    sta ch_ptr_lo,x
+    iny
+    lda (ZP_MUSIC),y
+    sta ch_start_hi,x
+    sta ch_ptr_hi,x
+    iny
+    lda #1                      ; first note on the next step
+    sta ch_left,x
+    stz ch_vol,x
+    inx
+    cpx music_n
+    bne @channel
+    lda has_ym                  ; then the YM channels' patches (which
+    beq @done                   ; need ZP_MUSIC)
+    ldx #0
+@patch:
+    lda ch_hw,x
+    bpl :+
+    jsr ym_patch
+:   inx
+    cpx music_n
+    bne @patch
+@done:
+    rts
+
+; Channel X's next (note, frames) pair: strike, hold or rest
+next_note:
+    lda ch_ptr_lo,x
+    sta ZP_MUSIC
+    lda ch_ptr_hi,x
+    sta ZP_MUSIC+1
+    ldy #0
+    lda (ZP_MUSIC),y
+    cmp #MUSIC_STOP
+    bne :+
+    lda #$ff                    ; the end of a tune that plays once: rest
+    sta ch_left,x               ; here for good (back again in 255 frames)
+    lda #0
+    bra @play
+:   cmp #MUSIC_LOOP
+    bne :+
+    lda ch_start_lo,x           ; back to the start
+    sta ZP_MUSIC
+    lda ch_start_hi,x
+    sta ZP_MUSIC+1
+    lda (ZP_MUSIC),y
+:   pha
+    iny
+    lda (ZP_MUSIC),y
+    sta ch_left,x
+    clc
+    lda ZP_MUSIC
+    adc #2
+    sta ch_ptr_lo,x
+    lda ZP_MUSIC+1
+    adc #0
+    sta ch_ptr_hi,x
+    pla
+@play:
+    bit #MUSIC_TIE
+    bne @done                   ; held over: nothing to do
+    ldy ch_hw,x
+    bmi @ym
+    cmp #0
+    beq @psg_rest
+    jmp psg_strike
+@psg_rest:
+    stz ch_vol,x
+    rts
+@ym:
+    cmp #0
+    beq @ym_rest
+    jmp ym_strike
+@ym_rest:
+    jmp ym_release
+@done:
+    rts
+
+; Set PSG channel X's VERA address to its voice's register A (0-3)
+psg_reg:
+    sta tmp_music
+    lda ch_hw,x
+    asl a
+    asl a
+    ora tmp_music
+    clc
+    adc #<VRAM_PSG
+    sta VERA_ADDR_L
+    lda #>VRAM_PSG
+    adc #0
+    sta VERA_ADDR_M
+    lda #^VRAM_PSG | VERA_INC_1
+    sta VERA_ADDR_H
+    rts
+
+; Strike note A on PSG channel X
+psg_strike:
+    tay
+    lda #0
+    jsr psg_reg
+    lda psg_freq_lo,y
+    sta VERA_DATA0
+    lda psg_freq_hi,y
+    sta VERA_DATA0
+    ldy ch_instr,x
+    lda psg_peak,y
+    sta ch_vol,x
+    stz ch_vol_lo,x
+    ora #$c0                    ; both speakers
+    sta VERA_DATA0
+    lda psg_wave,y
+    sta VERA_DATA0
+    rts
+
+; Decay PSG channel X's volume toward its sustain level, and write it
+psg_envelope:
+    ldy ch_instr,x
+    lda ch_vol,x
+    cmp psg_sustain,y
+    beq @write
+    bcc @write                  ; resting, or below sustain: leave it
+    sec
+    lda ch_vol_lo,x
+    sbc psg_decay_lo,y
+    sta ch_vol_lo,x
+    lda ch_vol,x
+    sbc psg_decay_hi,y
+    bcc @floor
+    cmp psg_sustain,y
+    bcs :+
+@floor:
+    lda psg_sustain,y
+:   sta ch_vol,x
+@write:
+    lda #2
+    jsr psg_reg
+    lda ch_vol,x
+    ora #$c0
+    sta VERA_DATA0
+    rts
+
+; Silence all music voices and channels
+silence:
+    stz VERA_CTRL
+    ldx #MUSIC_PSG_VOICES * 4 - 1
+:   txa                         ; zero every register of voices 0-7
+    clc
+    adc #<VRAM_PSG
+    sta VERA_ADDR_L
+    lda #>VRAM_PSG
+    sta VERA_ADDR_M
+    lda #^VRAM_PSG
+    sta VERA_ADDR_H
+    stz VERA_DATA0
+    dex
+    bpl :-
+    lda has_ym
+    beq @done
+    ldx #7
+:   txa                         ; key off
+    ldy #$08
+    jsr ym_write
+    dex
+    bpl :-
+@done:
+    rts
+
+.assert <VRAM_PSG + MUSIC_PSG_VOICES * 4 <= 256, error, "PSG voices cross a page"
+
+; Load channel X's instrument patch into its YM channel
+ym_patch:
+    ldy ch_instr,x
+    lda ym_patch_lo,y
+    sta ZP_MUSIC
+    lda ym_patch_hi,y
+    sta ZP_MUSIC+1
+    lda ch_hw,x
+    and #7
+    sta tmp_music
+    clc                         ; $20: RL/FB/CONNECT
+    adc #$20
+    sta tmp_reg
+    ldy #0
+    jsr @put
+    lda tmp_music               ; $38: PMS/AMS
+    clc
+    adc #$38
+    sta tmp_reg
+    jsr @put
+    lda tmp_music               ; $40-$FF: 6 registers x 4 operators, 8 apart
+    clc
+    adc #$40
+    sta tmp_reg
+:   jsr @put
+    lda tmp_reg
+    clc
+    adc #8
+    sta tmp_reg
+    cpy #26
+    bne :-
+    rts
+@put:
+    lda (ZP_MUSIC),y
+    iny
+    phy
+    ldy tmp_reg
+    jsr ym_write
+    ply
+    rts
+
+; Strike note A on YM channel X
+ym_strike:
+    tay
+    lda ym_kc,y
+    pha
+    jsr ym_release              ; key off, so the envelope starts again
+    lda ch_hw,x
+    and #7
+    clc
+    adc #$28
+    tay
+    pla
+    jsr ym_write
+    lda ch_hw,x
+    and #7
+    ora #$78                    ; key on, all four operators
+    ldy #$08
+    jmp ym_write
+
+; Release YM channel X's note
+ym_release:
+    lda ch_hw,x
+    and #7
+    ldy #$08
+    ; fall through
+
+; Write A to YM2151 register Y. Gives up (no YM) if it stays busy.
+; Preserves X.
+ym_write:
+    pha
+    lda #YM_TIMEOUT
+    sta tmp_ym
+:   bit YM_DATA
+    bpl :+
+    dec tmp_ym
+    bne :-
+    stz has_ym
+    pla
+    rts
+:   sty YM_ADDR
+    pla
+    sta YM_DATA
+    rts
+
 ; A = stars (1-3) earned by solving the level in `moves`
 rate:
     lda lvl+LV_PAR
@@ -1173,6 +1597,7 @@ reset_level:
     lda theme_hi,x
     sta ZP_THEME+1
     jsr load_garden
+    jsr want_music
     lda #$ff                    ; nothing drawn yet: draw every cell
     ldx #NCELLS-1
 :   sta drawn,x
@@ -1188,6 +1613,7 @@ refresh:
     bne :+
     stz walking                 ; not (or no longer) solved: tove waits at the entry
     stz arrived
+    jsr want_music              ; ... to the theme's tune
     jsr tove_idle
     bra @draw
 :   lda walking
@@ -1913,6 +2339,24 @@ s_load_failed:  .byte "Can't load RINGS.BIN or CELLS.BIN", 0
 
 saved_mode:     .res 1
 seed:           .res 2
+has_ym:         .res 1
+old_irq:        .res 2
+music_off:      .res 1          ; the player turned it off (M)
+music_want:     .res 1          ; tune the main code wants ($ff: none)
+music_cur:      .res 1          ; tune the interrupt is playing
+music_n:        .res 1          ; its channels
+tmp_music:      .res 1
+tmp_reg:        .res 1
+tmp_ym:         .res 1
+ch_hw:          .res MUSIC_CHANNELS ; bit 7 = YM; PSG voice or YM channel
+ch_instr:       .res MUSIC_CHANNELS
+ch_start_lo:    .res MUSIC_CHANNELS
+ch_start_hi:    .res MUSIC_CHANNELS
+ch_ptr_lo:      .res MUSIC_CHANNELS
+ch_ptr_hi:      .res MUSIC_CHANNELS
+ch_left:        .res MUSIC_CHANNELS ; frames until the next pair
+ch_vol:         .res MUSIC_CHANNELS ; PSG volume, 8.8
+ch_vol_lo:      .res MUSIC_CHANNELS
 snd_pages:      .res 1
 critter_z:      .res 1
 cr_x:           .res NCRITTERS      ; sprite corner, x relative to the band

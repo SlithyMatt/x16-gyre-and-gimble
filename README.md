@@ -45,6 +45,13 @@ You can hear it too: a plain ring grinds round and thuds into place, gears
 turning the same way click together in step, and gears turning against
 each other ratchet tick-tock.
 
+Each garden has its own music, all tunes from Alice's day: "Twinkle,
+Twinkle, Little Star" at noon, "The Blue Danube" at brillig and
+"Greensleeves" in the tulgey wood. The VERA PSG plays the whole
+arrangement; if your X16 has a YM2151, it joins in with strings, a music
+box or flute, and a bass. When the tove gets home, a short fanfare plays, and
+then the garden is quiet until the next level.
+
 <img src="docs/solved.png" width="400" alt="Level 3 solved at par with three stars">
 
 Each solve earns **stars** against the level's par (the fewest moves
@@ -61,6 +68,7 @@ session shows under the level number.
 | U or Del | B | Undo |
 | R | Select | Restart the level |
 | Return | A or Start | Next level (after solving) |
+| M | | Music on / off |
 | N / P | | Skip to the next / previous level (for testing) |
 | Q | | Quit to BASIC |
 
@@ -78,6 +86,8 @@ Any SNES controller in ports 1–4 works, and a held D-pad direction repeats.
 - `tools/level.py`: compiles the levels, checks that each is solvable and
   computes par. `suggest LEVEL N` finds starting rotations with par N, and
   `keys LEVEL` prints a shortest solution as keystrokes.
+- `tools/genmusic.py`: compiles the background music (`assets/music/`,
+  scores in an ABC-like text format) for the game's sequencer
 - `tools/gensounds.py`: synthesizes the PCM sound effects (ring turns
   for each kind of gimbal, the tove's footsteps)
 - `tools/gensprites.py`: compiles text sprite sheets (`assets/tove.txt`,

@@ -1,0 +1,42 @@
+# "Twinkle, Twinkle, Little Star" — the French air "Ah! vous dirai-je,
+# maman" (1761), with Jane Taylor's words (1806). Carroll parodied it in
+# Alice's Adventures in Wonderland (1865): "Twinkle, twinkle, little bat!"
+# Public domain. For the noon theme.
+#
+# The air plain, then a variation in running eighths (after the manner of
+# Mozart's variations), over an Alberti bass. Kept soft: a square-wave
+# melody and every part turned down.
+#
+# Format: see tools/genmusic.py. One unit is an eighth note.
+
+title Twinkle, Twinkle, Little Star
+unit 18
+bar 8
+key C
+
+voice melody psg clarinet volume 70
+c2 c2 g2 g2 | a2 a2 g4 | f2 f2 e2 e2 | d2 d2 c4 |
+g2 g2 f2 f2 | e2 e2 d4 | g2 g2 f2 f2 | e2 e2 d4 |
+c2 c2 g2 g2 | a2 a2 g4 | f2 f2 e2 e2 | d2 d2 c4 |
+c e g e g2 g2 | a c' a f g4 | f a f d e g e c | d f e d c4 |
+g a g e f g f d | e f e c d4 | g a g e f g f d | e f e c d4 |
+c e g e g2 g2 | a c' a f g4 | f a f d e g e c | d f e d c4 |
+
+# Alberti bass: each half bar's chord broken low-high-middle-high
+voice alberti psg alberti volume 65
+{ C G E G C G E G | C A F A C G E G | C A F A C G E G | B, G D G C G E G |
+  C G E G B, G F G | C G E G B, G D G | C G E G B, G F G | C G E G B, G D G |
+  C G E G C G E G | C A F A C G E G | C A F A C G E G | B, G D G C G E G | }2
+
+voice bass psg bass volume 70
+{ C,4 C,4 | F,4 C,4 | F,4 C,4 | G,4 C,4 |
+  C,4 G,4 | C,4 G,4 | C,4 G,4 | C,4 G,4 |
+  C,4 C,4 | F,4 C,4 | F,4 C,4 | G,4 C,4 | }2
+
+# YM2151, when present: a music box an octave up, strings, and a round bass
+voice box ym bell copy melody volume 50
+voice pad ym pad width 3 volume 70
+{ [CEG]4 [CEG]4 | [CFA]4 [CEG]4 | [CFA]4 [CEG]4 | [B,DG]4 [CEG]4 |
+  [CEG]4 [B,FG]4 | [CEG]4 [B,DG]4 | [CEG]4 [B,FG]4 | [CEG]4 [B,DG]4 |
+  [CEG]4 [CEG]4 | [CFA]4 [CEG]4 | [CFA]4 [CEG]4 | [B,DG]4 [CEG]4 | }2
+voice fmbass ym bass copy bass volume 70

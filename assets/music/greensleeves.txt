@@ -1,0 +1,43 @@
+# "Greensleeves", the English ballad (16th century), as sung everywhere
+# again after William Chatterton Dix set "What Child Is This?" to it
+# (1865). Public domain. For the tulgey theme: a slow minor air in the
+# shade of the wood.
+#
+# Verse and refrain, with the melodic minor's raised notes (F#, G#), over
+# a lute-like broken chord.
+#
+# Format: see tools/genmusic.py. One unit is a sixteenth note (6/8 time).
+
+title Greensleeves
+unit 10
+bar 12
+key Am
+
+voice melody psg clarinet
+c4 d2 e3 ^f e2 | d4 B2 G3 A B2 | c4 A2 A3 ^G A2 | B4 ^G2 E4 A2 |
+c4 d2 e3 ^f e2 | d4 B2 G3 A B2 | c3 B A2 ^G3 ^F ^G2 | A6 z6 |
+g6 g3 ^f e2 | d4 B2 G3 A B2 | c4 A2 A3 ^G A2 | B4 ^G2 E6 |
+g6 g3 ^f e2 | d4 B2 G3 A B2 | c3 B A2 ^G3 ^F ^G2 | A6 z4 A2 |
+
+# Each half bar's chord, broken upward in eighths
+voice arp psg arp
+A,2 C2 E2 A,2 C2 E2 | G,2 B,2 D2 G,2 B,2 D2 | A,2 C2 E2 A,2 C2 E2 | E,2 ^G,2 B,2 E,2 ^G,2 B,2 |
+A,2 C2 E2 A,2 C2 E2 | G,2 B,2 D2 G,2 B,2 D2 | A,2 C2 E2 E,2 ^G,2 B,2 | A,2 C2 E2 A,2 C2 E2 |
+G,2 C2 E2 G,2 C2 E2 | G,2 B,2 D2 G,2 B,2 D2 | A,2 C2 E2 A,2 C2 E2 | E,2 ^G,2 B,2 E,2 ^G,2 B,2 |
+G,2 C2 E2 G,2 C2 E2 | G,2 B,2 D2 G,2 B,2 D2 | A,2 C2 E2 E,2 ^G,2 B,2 | A,2 C2 E2 A,2 C2 E2 |
+
+voice bass psg bass
+A,,6 A,,6 | G,,6 G,,6 | A,,6 A,,6 | E,,6 E,,6 |
+A,,6 A,,6 | G,,6 G,,6 | A,,6 E,,6 | A,,6 A,,6 |
+C,6 C,6 | G,,6 G,,6 | A,,6 A,,6 | E,,6 E,,6 |
+C,6 C,6 | G,,6 G,,6 | A,,6 E,,6 | A,,6 A,,6 |
+
+# YM2151, when present: strings on the chords, a flute an octave above the
+# tune, and a round bass
+voice pad ym pad width 3
+[A,CE]12 | [G,B,D]12 | [A,CE]12 | [^G,B,E]12 |
+[A,CE]12 | [G,B,D]12 | [A,CE]6 [^G,B,E]6 | [A,CE]12 |
+[G,CE]12 | [G,B,D]12 | [A,CE]12 | [^G,B,E]12 |
+[G,CE]12 | [G,B,D]12 | [A,CE]6 [^G,B,E]6 | [A,CE]12 |
+voice flute ym flute copy melody transpose 12
+voice fmbass ym bass copy bass

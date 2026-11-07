@@ -15,8 +15,11 @@
 # paving under the text, the kerb around it, soil in the flower beds and the
 # gravel path to the entry. Paving luma must be at most 3, under white text,
 # and grass luma at least 1.5 from both paving and stone.
+#
+# "music NAME" picks the theme's tune, from assets/music/NAME.txt.
 
 theme noon              # sandstone and slate in daylight
+music twinkle
 stone    9  8  6
 sel     12 11  8
 follow   6 10 14
@@ -38,6 +41,7 @@ soil     5  3  2
 path     8  7  5
 
 theme brillig           # four o'clock in the afternoon: warmer, lower sun
+music danube
 stone   10  7  4
 sel     13 10  6
 follow   6 10 14
@@ -59,6 +63,7 @@ soil     5  3  1
 path     9  7  4
 
 theme tulgey            # the tulgey wood: mossy stone in green shade
+music greensleeves
 stone    7  8  5
 sel     10 12  8
 follow   6 10 14

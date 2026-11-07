@@ -9,7 +9,7 @@ PRG     := $(BUILD)/$(NAME).PRG
 BOARD   := $(BUILD)/RINGS.BIN $(BUILD)/CELLS.BIN $(BUILD)/SOUNDS.BIN
 SOURCES := $(wildcard src/*.asm src/*.inc)
 GEN_INC := $(BUILD)/board.inc $(BUILD)/pieces.inc $(BUILD)/waypoints.inc $(BUILD)/level.inc \
-           $(BUILD)/tove.inc $(BUILD)/critters.inc $(BUILD)/sounds.inc $(BUILD)/stars.inc $(BUILD)/themes.inc
+           $(BUILD)/tove.inc $(BUILD)/critters.inc $(BUILD)/sounds.inc $(BUILD)/music.inc $(BUILD)/stars.inc $(BUILD)/themes.inc
 
 .PHONY: all run clean joytest
 
@@ -37,6 +37,11 @@ $(BUILD)/SOUNDS.BIN: tools/gensounds.py | $(BUILD)
 	$(PYTHON) tools/gensounds.py $@ $(BUILD)/sounds.inc $(BUILD)/wav
 
 $(BUILD)/sounds.inc: $(BUILD)/SOUNDS.BIN ;
+
+MUSIC   := $(sort $(wildcard assets/music/*.txt))
+
+$(BUILD)/music.inc: tools/genmusic.py tools/shading.py assets/themes.txt $(MUSIC) | $(BUILD)
+	$(PYTHON) tools/genmusic.py assets/themes.txt assets/music $@ fanfare
 
 $(BUILD)/critters.inc: tools/gensprites.py assets/critters.txt | $(BUILD)
 	$(PYTHON) tools/gensprites.py assets/critters.txt critters $@

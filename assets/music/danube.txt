@@ -1,0 +1,44 @@
+# "The Blue Danube" (An der schönen blauen Donau, Op. 314), Johann Strauss
+# II, 1867: the great hit of the years before Through the Looking-Glass
+# (1871). A waltz, for a game of turning rings. Public domain. For the
+# brillig theme (four o'clock in the afternoon: tea time).
+#
+# The first waltz's opening strain, with an oom-pah-pah accompaniment. The
+# closing four bars are a cadence of this arrangement's own.
+#
+# Format: see tools/genmusic.py. One unit is a quarter note.
+
+title The Blue Danube
+unit 20
+bar 3
+key D
+
+voice melody psg lead transpose 12
+D D F | A3 | z A A | z F F | D D F | A3 | z A A | z G G |
+C C E | B3 | z B B | z G G | C C E | B3 | z B B | z F F |
+D D F | A d2 | z d d | z A A | D D F | A d2 | z d d | z B B |
+E E G | B3 | z B B | z ^G A | f3 | e3 | g2 c | d3 |
+
+# Oom: the bass on the beat ...
+voice bass psg bass
+D, z2 | D, z2 | D, z2 | D, z2 | D, z2 | D, z2 | D, z2 | A,, z2 |
+A,, z2 | A,, z2 | A,, z2 | A,, z2 | A,, z2 | A,, z2 | A,, z2 | D, z2 |
+D, z2 | D, z2 | D, z2 | D, z2 | D, z2 | D, z2 | D, z2 | G,, z2 |
+E, z2 | E, z2 | E, z2 | E, z2 | A,, z2 | A,, z2 | A,, z2 | D, z2 |
+
+# ... pah-pah: the chord after it
+voice pah psg pah width 2
+z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [CG] [CG] |
+z [CG] [CG] | z [CG] [CG] | z [CG] [CG] | z [CG] [CG] | z [CG] [CG] | z [CG] [CG] | z [CG] [CG] | z [FA] [FA] |
+z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [FA] [FA] | z [GB] [GB] |
+z [GB] [GB] | z [GB] [GB] | z [GB] [GB] | z [D^G] [D^G] | z [FA] [FA] | z [CG] [CG] | z [CG] [CG] | z [FA] [FA] |
+
+# YM2151, when present: strings holding each bar's chord, a flute on the
+# tune, and a round bass
+voice pad ym pad width 3
+[DFA]3 | [DFA]3 | [DFA]3 | [DFA]3 | [DFA]3 | [DFA]3 | [DFA]3 | [CEG]3 |
+[CEG]3 | [CEG]3 | [CEG]3 | [CEG]3 | [CEG]3 | [CEG]3 | [CEG]3 | [DFA]3 |
+[DFA]3 | [DFA]3 | [DFA]3 | [DFA]3 | [DFA]3 | [DFA]3 | [DFA]3 | [DGB]3 |
+[EGB]3 | [EGB]3 | [EGB]3 | [D^GB]3 | [DFA]3 | [CEG]3 | [CEG]3 | [DFA]3 |
+voice flute ym flute copy melody transpose 12
+voice fmbass ym bass copy bass

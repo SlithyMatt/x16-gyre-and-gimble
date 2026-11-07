@@ -183,6 +183,44 @@ new sound simply cuts off the old.
 - **TV speakers:** the thuds sit at 100–250 Hz rather than lower, so they
   carry on a small speaker.
 
+## Music
+
+Each theme names a tune (`music` in `assets/themes.txt`), all public domain
+and popular when *Through the Looking-Glass* appeared (1871):
+
+| Theme | Tune |
+| --- | --- |
+| noon | "Twinkle, Twinkle, Little Star", which Carroll parodied in *Wonderland* ("Twinkle, twinkle, little bat"); the air, then a variation, over an Alberti bass |
+| brillig | "The Blue Danube" (Strauss, 1867), the opening strain of the first waltz, oom-pah-pah. A waltz, for turning rings |
+| tulgey | "Greensleeves", sung everywhere again as "What Child Is This?" (1865); slow, minor, over a lute-like broken chord |
+
+- **Scores** are text (`assets/music/*.txt`) in an ABC-like notation;
+  `tools/genmusic.py` checks every bar's length and that all voices match,
+  and compiles each voice to a loop of (note, frames) pairs. Chord voices
+  take a channel per note, and a voice can copy another's notes.
+- **PSG first:** the VERA PSG (voices 0–7) is always there, so it plays the
+  whole arrangement (melody, accompaniment, bass) with software envelopes:
+  a strike, a decay to a sustain level, and a gap of silence at each note's
+  end so repeated notes articulate.
+- **YM2151 augmentation:** at startup the audio ROM's `ym_init` reports
+  whether the chip answers. If it does, each tune's YM channels join in:
+  a string pad on the chords, the melody doubled on a music box or flute,
+  and the bass. They're channels of the same sequencer, stepped on the
+  same frame, so they stay in sync by construction. The patches are the
+  tool's own (`YM_INSTRUMENTS`).
+- **Timing:** a VSYNC interrupt (chained ahead of the KERNAL's handler)
+  steps every channel once per frame, so tempo holds while a move redraws
+  the board. It saves and restores the VERA address, since the main code
+  may be partway through setting one. The main code only names the tune
+  it wants; the interrupt switches tunes itself.
+- **Fanfare:** when the tove reaches the burrow, the theme's tune gives way
+  to a 1.8 s fanfare (`assets/music/fanfare.txt`, marked `once`: its
+  streams end in a stop, not a loop), then silence until the next level.
+  An undo that breaks the path brings the theme's tune back.
+- **Levels:** the music sits well under the sound effects (PCM volume 12),
+  and M turns it off. Quitting unhooks the interrupt and silences both
+  chips.
+
 ## Display: playable on a composite TV
 
 The game has to read well on an NTSC composite CRT, not just VGA.

@@ -14,13 +14,13 @@ runs from the gap in the outer rim to the burrow at the center. See
 ## Build & run
 
 ```sh
-make        # builds build/GYRE.PRG, RINGS.BIN and CELLS.BIN
+make        # builds build/GYRE.PRG, RINGS.BIN, CELLS.BIN and SOUNDS.BIN
 make run    # builds, then launches x16emu from build/
 make clean
 make joytest  # replays a scripted SNES pad through every level
 ```
 
-The game loads `RINGS.BIN` and `CELLS.BIN` from the current device, so keep them next to `GYRE.PRG`.
+The game loads `RINGS.BIN`, `CELLS.BIN` and `SOUNDS.BIN` from the current device, so keep them next to `GYRE.PRG`. The build also writes WAV previews of the sound effects to `build/wav/`.
 
 ## Gameplay
 
@@ -41,6 +41,9 @@ and celebrate when the tove is home.
 Rings whose gear teeth mesh are linked by a **gimbal**: turning the
 driving ring also turns the next one. When you select a ring, any ring it
 will drag, teeth and all, is tinted blue (same direction) or mauve (opposite).
+You can hear it too: a plain ring grinds round and thuds into place, gears
+turning the same way click together in step, and gears turning against
+each other ratchet tick-tock.
 
 <img src="docs/solved.png" width="400" alt="Level 3 solved at par with three stars">
 
@@ -75,6 +78,8 @@ Any SNES controller in ports 1–4 works, and a held D-pad direction repeats.
 - `tools/level.py`: compiles the levels, checks that each is solvable and
   computes par. `suggest LEVEL N` finds starting rotations with par N, and
   `keys LEVEL` prints a shortest solution as keystrokes.
+- `tools/gensounds.py`: synthesizes the PCM sound effects (ring turns
+  for each kind of gimbal, the tove's footsteps)
 - `tools/gensprites.py`: compiles text sprite sheets (`assets/tove.txt`,
   `assets/critters.txt`) into sprite frames and palette
 - `tools/genchars.py`: compiles text glyphs (`assets/stars.txt`) into

@@ -16,6 +16,12 @@ TOVE_Z          = 2 << 2        ; Z-depth 2: over the board, under the HUD text
 WALK_STEPS      = 8             ; frames per waypoint segment (make_step assumes 8)
 VRAM_SPRITES    = $1FC00
 
+; Sound effects (see tools/gensounds.py)
+SOUND_BANK      = CELLS_BANK + CELLS_BANKS
+AUDIO_VOLUME    = 12              ; 13+ clips full-scale samples (measured in x16emu)
+AUDIO_RESET     = $80           ; VERA_AUDIO_CTRL: write to empty the FIFO
+.assert SOUND_BANK + SOUND_BANKS <= 64, error, "sounds need more high RAM than the minimum 512 KB"
+
 ; Garden critters: borogoves and mome raths (see assets/critters.txt)
 CRITTER_SPRITE  = 2             ; sprites 2-5, under the tove
 NCRITTERS       = 4
@@ -98,6 +104,7 @@ JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 .include "pieces.inc"
 .include "stars.inc"
 .include "critters.inc"
+.include "sounds.inc"
 
 .import __BSS_RUN__, __BSS_SIZE__
 
@@ -123,6 +130,8 @@ start:
     jsr load_board
     bcs @failed
     jsr load_cells
+    bcs @failed
+    jsr load_sounds
     bcc @go
 @failed:
     print_at SAFE_T, SAFE_L, s_load_failed
@@ -158,6 +167,9 @@ main_loop:
     bra main_loop
 
 quit:
+    stz VERA_AUDIO_RATE         ; silence
+    lda #AUDIO_RESET
+    sta VERA_AUDIO_CTRL
     stz tove_z                  ; hide the sprites before handing back to BASIC
     jsr set_tove
     stz critter_z
@@ -510,6 +522,10 @@ tick_tove:
     lda walking
     beq @done                   ; arrived
 :   lda anim                    ; walk cycle: frames 0-3, 4 jiffies each
+    and #7
+    bne :+
+    jsr footstep                ; a step every other frame
+:   lda anim
     lsr a
     lsr a
     and #3
@@ -1033,6 +1049,88 @@ load_cells:
     sta RAM_BANK
     rts
 
+; Load the sound effects into high RAM after the pieces. Carry set on error.
+load_sounds:
+    lda #1
+    ldx #8
+    ldy #2                      ; headerless
+    jsr SETLFS
+    lda #sounds_name_end - sounds_name
+    ldx #<sounds_name
+    ldy #>sounds_name
+    jsr SETNAM
+    lda RAM_BANK
+    pha
+    lda #SOUND_BANK
+    sta RAM_BANK
+    lda #0
+    ldx #<$a000
+    ldy #>$a000
+    jsr LOAD
+    pla
+    sta RAM_BANK
+    rts
+
+; Play sound A, cutting off any sound still playing. Each sound fits VERA's
+; 4 KB FIFO, so it goes in whole and plays on by itself. Preserves X.
+play_sound:
+    tay
+    phx
+    tya
+    tax
+    lda RAM_BANK
+    pha
+    lda snd_bank,x
+    clc
+    adc #SOUND_BANK
+    sta RAM_BANK
+    lda snd_lo,x
+    sta ZP_PTR
+    lda snd_hi,x
+    sta ZP_PTR+1
+    lda #AUDIO_RESET | AUDIO_VOLUME     ; 8-bit mono
+    sta VERA_AUDIO_CTRL
+    ldy #0
+    lda snd_len_hi,x
+    beq @tail
+    sta snd_pages
+@page:
+    lda (ZP_PTR),y
+    sta VERA_AUDIO_DATA
+    iny
+    bne @page
+    inc ZP_PTR+1
+    dec snd_pages
+    bne @page
+@tail:
+    lda snd_len_lo,x
+    beq @go
+    sta snd_pages
+:   lda (ZP_PTR),y
+    sta VERA_AUDIO_DATA
+    iny
+    cpy snd_pages
+    bne :-
+@go:
+    lda #SOUND_RATE
+    sta VERA_AUDIO_RATE
+    pla
+    sta RAM_BANK
+    plx
+    rts
+
+; A tove footstep, left or right, unless another sound is still playing
+footstep:
+    bit VERA_AUDIO_CTRL         ; V = FIFO empty
+    bvc @busy
+    lda #SND_STEP1
+    bit anim
+    beq :+
+    lda #SND_STEP2
+:   jmp play_sound
+@busy:
+    rts
+
 ; Load the board bitmap into VRAM $00000. Carry set on error.
 load_board:
     lda #1
@@ -1161,6 +1259,16 @@ turn_sel:
     sta tmp_same
     lda lvl+LV_OPP,x
     sta tmp_opp
+    ldy #SND_COUNTER            ; the sound says what the gimbals drag
+    lda tmp_opp
+    bne :+
+    ldy #SND_FOLLOW
+    lda tmp_same
+    cmp ring_bit,x
+    bne :+
+    ldy #SND_TURN
+:   tya
+    jsr play_sound
     ldx #0
 @ring:
     lsr tmp_same
@@ -1736,6 +1844,9 @@ joy_keys1:      ; A, X, L, R
 ring_base:
     .byte 0, CELLS, 2*CELLS, 3*CELLS
 
+ring_bit:
+    .byte 1, 2, 4, 8
+
 ; Each critter: its kind, band (0 left, 1 right), frames per step - 1
 ; (a mask of anim) and starting waypoint
 cr_kind:        .byte BOROGOVE, RATH, RATH, BOROGOVE
@@ -1774,6 +1885,9 @@ board_name_end:
 cells_name:
     .byte "cells.bin"
 cells_name_end:
+sounds_name:
+    .byte "sounds.bin"
+sounds_name_end:
 
 s_title1:       .byte "Gyre &", 0
 s_title2:       .byte "Gimble", 0
@@ -1799,6 +1913,7 @@ s_load_failed:  .byte "Can't load RINGS.BIN or CELLS.BIN", 0
 
 saved_mode:     .res 1
 seed:           .res 2
+snd_pages:      .res 1
 critter_z:      .res 1
 cr_x:           .res NCRITTERS      ; sprite corner, x relative to the band
 cr_y:           .res NCRITTERS

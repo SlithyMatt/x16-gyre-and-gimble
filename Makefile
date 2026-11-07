@@ -6,10 +6,10 @@ PYTHON  ?= python3
 NAME    := GYRE
 BUILD   := build
 PRG     := $(BUILD)/$(NAME).PRG
-BOARD   := $(BUILD)/RINGS.BIN $(BUILD)/CELLS.BIN
+BOARD   := $(BUILD)/RINGS.BIN $(BUILD)/CELLS.BIN $(BUILD)/SOUNDS.BIN
 SOURCES := $(wildcard src/*.asm src/*.inc)
 GEN_INC := $(BUILD)/board.inc $(BUILD)/pieces.inc $(BUILD)/waypoints.inc $(BUILD)/level.inc \
-           $(BUILD)/tove.inc $(BUILD)/critters.inc $(BUILD)/stars.inc $(BUILD)/themes.inc
+           $(BUILD)/tove.inc $(BUILD)/critters.inc $(BUILD)/sounds.inc $(BUILD)/stars.inc $(BUILD)/themes.inc
 
 .PHONY: all run clean joytest
 
@@ -21,7 +21,7 @@ $(PRG): $(SOURCES) $(GEN_INC) | $(BUILD)
 		-l $(BUILD)/$(NAME).list -m $(BUILD)/$(NAME).map -Ln $(BUILD)/$(NAME).sym \
 		src/main.asm
 
-BOARD_GEN := $(BOARD) $(BUILD)/board.inc $(BUILD)/pieces.inc $(BUILD)/waypoints.inc
+BOARD_GEN := $(BUILD)/RINGS.BIN $(BUILD)/CELLS.BIN $(BUILD)/board.inc $(BUILD)/pieces.inc $(BUILD)/waypoints.inc
 
 $(BOARD_GEN) &: tools/genrings.py tools/garden.py tools/shading.py | $(BUILD)
 	$(PYTHON) tools/genrings.py $(BOARD_GEN)
@@ -31,6 +31,12 @@ $(BUILD)/themes.inc: tools/genthemes.py tools/shading.py assets/themes.txt | $(B
 
 $(BUILD)/tove.inc: tools/gensprites.py assets/tove.txt | $(BUILD)
 	$(PYTHON) tools/gensprites.py assets/tove.txt tove $@
+
+# Also writes sounds.inc, and WAV previews of each sound to build/wav/
+$(BUILD)/SOUNDS.BIN: tools/gensounds.py | $(BUILD)
+	$(PYTHON) tools/gensounds.py $@ $(BUILD)/sounds.inc $(BUILD)/wav
+
+$(BUILD)/sounds.inc: $(BUILD)/SOUNDS.BIN ;
 
 $(BUILD)/critters.inc: tools/gensprites.py assets/critters.txt | $(BUILD)
 	$(PYTHON) tools/gensprites.py assets/critters.txt critters $@

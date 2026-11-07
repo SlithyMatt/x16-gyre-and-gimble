@@ -161,6 +161,28 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
 - **Later:** smoother rotation by drawing 24 screen positions per ring
   (cells 2 positions wide), which allows a half-step frame.
 
+## Sound
+
+PCM effects through VERA's audio FIFO: 8-bit signed mono at 12.2 kHz
+(rate register 32). `tools/gensounds.py` synthesizes them at build time
+into `SOUNDS.BIN`, which loads into high RAM after the cell pieces (no
+sound crosses a bank). Each sound fits the 4 KB FIFO, so the game resets
+the FIFO and copies a whole sound in at once (a few milliseconds), and
+VERA plays it out with no further attention: no interrupt handler, and a
+new sound simply cuts off the old.
+
+- **Ring turns** (every move and undo) say what the gimbals drag:
+  - plain: stone grinding on stone, then a thud as the ring settles
+  - same direction: gear teeth clicking together in step, and two rings
+    thudding down almost as one
+  - opposite: the gears ratcheting against each other tick-tock, and two
+    thuds, apart and at different pitches
+  If a ring drags rings both ways, the opposite sound wins.
+- **Footsteps:** the tove patters home, alternating left and right every
+  8 frames, but only when the FIFO is empty, so it never cuts off a turn.
+- **TV speakers:** the thuds sit at 100–250 Hz rather than lower, so they
+  carry on a small speaker.
+
 ## Display: playable on a composite TV
 
 The game has to read well on an NTSC composite CRT, not just VGA.

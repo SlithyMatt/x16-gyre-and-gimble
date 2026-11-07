@@ -196,6 +196,21 @@ quit:
 
 ; Act on key A. Carry set to quit.
 handle_key:
+    ldx finished
+    beq @play
+    cmp #KEY_RETURN             ; the ending: Return plays again from level 1
+    beq @again
+    cmp #'m'
+    beq @music
+    cmp #'q'
+    beq @quit
+    clc
+    rts
+@again:
+    stz finished
+    lda #0
+    jmp @goto
+@play:
     cmp #KEY_UP
     beq @up
     cmp #'w'
@@ -281,8 +296,12 @@ handle_key:
     lda level
     inc a
     cmp #NLEVELS
-    bcs @ignore
-    bra @goto
+    bcc @goto
+    lda arrived                 ; past the last level: the ending
+    beq @ignore
+    jsr show_ending
+    clc
+    rts
 @prev:
     lda level
     beq @ignore
@@ -413,9 +432,15 @@ script_joy:
     beq @none                   ; byte 1 = 0 marks the end: pad unplugged
     lda (ZP_PTR)
     pha
+    inc joy_script_n            ; each entry holds for byte 2 frames
+    lda joy_script_n
+    ldy #2
+    cmp (ZP_PTR),y
+    bne :+
+    stz joy_script_n
     clc
     lda joy_script_ptr
-    adc #2
+    adc #3
     sta joy_script_ptr
     bcc :+
     inc joy_script_ptr+1
@@ -1097,9 +1122,14 @@ music_irq:
     jmp (old_irq)
 
 tick_music:
-    lda music_want
+    lda music_again             ; the same tune again, from the start
+    beq :+
+    stz music_again
+    bra @start
+:   lda music_want
     cmp music_cur
     beq :+
+@start:
     jsr start_tune
 :   lda music_cur
     cmp #NO_TUNE
@@ -1403,6 +1433,132 @@ ym_write:
     pla
     sta YM_DATA
     rts
+
+;
+; The ending: after the last level, a box over the board with the session's
+; star total. Return plays again from level 1.
+;
+ENDING_ROW      = 10
+ENDING_COL      = 10
+ENDING_W        = 20
+ENDING_H        = 10
+CLR_PANEL       = $97           ; dark gray: the box behind the ending's text
+CLR_BLACK       = $90           ; black: no background (transparent)
+SWAP_COLORS     = $01
+
+show_ending:
+    lda #1
+    sta finished
+    lda music_off               ; the fanfare once more
+    bne :+
+    lda #TUNE_FANFARE
+    sta music_want
+    lda #1
+    sta music_again
+:   lda #CLR_PANEL              ; draw on a dark box: background = panel
+    jsr CHROUT
+    lda #SWAP_COLORS
+    jsr CHROUT
+    lda #CLR_TEXT
+    jsr CHROUT
+    ldx #ENDING_H-1
+@row:
+    phx
+    txa
+    clc
+    adc #ENDING_ROW
+    tax
+    ldy #ENDING_COL
+    clc
+    jsr PLOT
+    ldx #ENDING_W
+:   lda #' '
+    jsr CHROUT
+    dex
+    bne :-
+    plx
+    dex
+    bpl @row
+    print_at SAFE_B-2, SAFE_R-7, s_blank    ; no more "Return to win!"
+    print_at SAFE_B-1, SAFE_R-7, s_blank
+    print_at ENDING_ROW+1, ENDING_COL+2, s_win1
+    print_at ENDING_ROW+2, ENDING_COL+2, s_win2
+    print_at ENDING_ROW+4, ENDING_COL+1, s_win3
+    lda #NLEVELS
+    ldx #0
+    jsr print_num
+    print_at ENDING_ROW+5, ENDING_COL+1, s_win4
+    print_at ENDING_ROW+7, ENDING_COL+1, s_win5
+    lda #CLR_LIT
+    jsr CHROUT
+    jsr total_stars
+    jsr print_num
+    lda #CLR_TEXT
+    jsr CHROUT
+    lda #'/'
+    jsr CHROUT
+    lda #<(NLEVELS * 3)
+    ldx #>(NLEVELS * 3)
+    jsr print_num
+    print_at ENDING_ROW+8, ENDING_COL+1, s_win6
+    lda #CLR_BLACK              ; back to text on nothing
+    jsr CHROUT
+    lda #SWAP_COLORS
+    jsr CHROUT
+    lda #CLR_TEXT
+    jmp CHROUT
+
+; A/X = the session's best stars, summed over every level
+total_stars:
+    lda #0
+    tax
+    ldy #0
+:   clc
+    adc best,y
+    bcc :+
+    inx
+:   iny
+    cpy #NLEVELS
+    bne :--
+    rts
+
+; Print A/X (lo/hi, 0-999) in decimal at the cursor, without leading zeros
+print_num:
+    sta num_lo
+    stx num_hi
+    ldy #0                      ; hundreds
+:   lda num_lo
+    sec
+    sbc #100
+    tax
+    lda num_hi
+    sbc #0
+    bcc :+
+    sta num_hi
+    stx num_lo
+    iny
+    bra :-
+:   tya
+    beq :+
+    ora #'0'
+    jsr CHROUT
+:   lda num_lo
+    ldx #0                      ; tens
+:   cmp #10
+    bcc :+
+    sbc #10
+    inx
+    bra :-
+:   pha
+    txa
+    bne :+
+    cpy #0
+    beq :++                     ; no hundreds and no tens: skip the zero
+:   ora #'0'
+    jsr CHROUT
+:   pla
+    ora #'0'
+    jmp CHROUT
 
 ; A = stars (1-3) earned by solving the level in `moves`
 rate:
@@ -2090,11 +2246,12 @@ draw_hud:
     print_at SAFE_T+1, SAFE_R-8, s_par
     lda lvl+LV_PAR
     jsr print_dec3
-    print_at SAFE_T+3, SAFE_L, s_level
-    lda level
+    print_at SAFE_T+2, SAFE_L, s_level    ; up a row: "Level 100" would
+    lda level                   ; reach the rim lower down
     inc a
-    jsr print_dec2
-    print_at SAFE_T+4, SAFE_L, s_best
+    ldx #0
+    jsr print_num
+    print_at SAFE_T+3, SAFE_L, s_best
     print_at SAFE_B-3, SAFE_L, s_help1
     print_at SAFE_B-2, SAFE_L, s_help2
     print_at SAFE_B-1, SAFE_L, s_help3
@@ -2111,7 +2268,7 @@ draw_status:
     jsr print_dec3
     ldx level                   ; best so far, small, under the level number
     lda best,x
-    ldx #SAFE_T+5
+    ldx #SAFE_T+4
     ldy #SAFE_L
     stz star_big
     jsr draw_stars
@@ -2328,11 +2485,17 @@ s_home1:        .byte "The tove", 0
 s_home2:        .byte "is home!", 0
 s_next1:        .byte "  Return", 0
 s_next2:        .byte "for next", 0
-s_end1:         .byte "The wabe", 0
-s_end2:         .byte "is clear", 0
+s_end1:         .byte "  Return", 0
+s_end2:         .byte " to win!", 0
 s_level:        .byte "Level ", 0
 s_best:         .byte "Best", 0
 s_blank:        .byte "        ", 0
+s_win1:         .byte "O frabjous day!", 0
+s_win2:         .byte "Callooh! Callay!", 0
+s_win3:         .byte "You solved all ", 0
+s_win4:         .byte "levels!", 0
+s_win5:         .byte "Stars ", 0
+s_win6:         .byte "Return: again", 0
 s_load_failed:  .byte "Can't load RINGS.BIN or CELLS.BIN", 0
 
 .segment "BSS"
@@ -2340,6 +2503,10 @@ s_load_failed:  .byte "Can't load RINGS.BIN or CELLS.BIN", 0
 saved_mode:     .res 1
 seed:           .res 2
 has_ym:         .res 1
+finished:       .res 1          ; showing the ending
+num_lo:         .res 1
+num_hi:         .res 1
+music_again:    .res 1          ; restart the tune even if it's the same one
 old_irq:        .res 2
 music_off:      .res 1          ; the player turned it off (M)
 music_want:     .res 1          ; tune the main code wants ($ff: none)
@@ -2403,6 +2570,7 @@ joy_new1:       .res 1
 joy_timer:      .res 1
 .ifdef JOY_SCRIPT
 joy_script_ptr: .res 2
+joy_script_n:   .res 1
 .endif
 level:          .res 1
 lvl:            .res LEVEL_SIZE     ; current level record (see tools/level.py)

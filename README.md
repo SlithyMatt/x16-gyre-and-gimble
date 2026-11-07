@@ -17,7 +17,7 @@ runs from the gap in the outer rim to the burrow at the center. See
 make        # builds build/GYRE.PRG, RINGS.BIN, CELLS.BIN and SOUNDS.BIN
 make run    # builds, then launches x16emu from build/
 make clean
-make joytest  # replays a scripted SNES pad through every level
+make joytest  # replays a scripted SNES pad through every level, to the ending
 ```
 
 The game loads `RINGS.BIN`, `CELLS.BIN` and `SOUNDS.BIN` from the current device, so keep them next to `GYRE.PRG`. The build also writes WAV previews of the sound effects to `build/wav/`.
@@ -36,7 +36,7 @@ When the path connects, it lights up and the tove walks home along it
 (Return or A skips the walk). Borogoves and mome raths wander the garden,
 and celebrate when the tove is home.
 
-<img src="docs/gimbal.png" width="400" alt="Level 2: the outer ring is selected and the ring inside it, meshed by gear teeth, is tinted blue">
+<img src="docs/gimbal.png" width="400" alt="Level 12: the outer ring is selected and the ring inside it, meshed by gear teeth, is tinted blue">
 
 Rings whose gear teeth mesh are linked by a **gimbal**: turning the
 driving ring also turns the next one. When you select a ring, any ring it
@@ -52,7 +52,10 @@ arrangement; if your X16 has a YM2151, it joins in with strings, a music
 box or flute, and a bass. When the tove gets home, a short fanfare plays, and
 then the garden is quiet until the next level.
 
-<img src="docs/solved.png" width="400" alt="Level 3 solved at par with three stars">
+<img src="docs/solved.png" width="400" alt="Level 18, in the tulgey wood, solved at par with three stars; the ring the selected one drags the opposite way is tinted mauve">
+
+There are **100 levels**, growing steadily harder, with gimbals arriving
+from level 5. Finish the last one to win.
 
 Each solve earns **stars** against the level's par (the fewest moves
 possible): 3 at par, 2 within par plus half again (rounded down), otherwise 1.
@@ -83,6 +86,8 @@ Any SNES controller in ports 1–4 works, and a held D-pad direction repeats.
   text panels, flower beds) and the critters' wandering bands
 - `tools/shading.py`, `tools/genthemes.py`: the shading model, and the
   per-level color themes (`assets/themes.txt`) built from it
+- `tools/genlevels.py`: generates the levels (`genlevels.py 4 103` writes
+  levels 1–100), each at an exact par, on a difficulty ramp
 - `tools/level.py`: compiles the levels, checks that each is solvable and
   computes par. `suggest LEVEL N` finds starting rotations with par N, and
   `keys LEVEL` prints a shortest solution as keystrokes.
@@ -97,7 +102,7 @@ Any SNES controller in ports 1–4 works, and a held D-pad direction repeats.
 - `assets/`: sprite and glyph art, as editable text grids
 - `tools/joyscript.py`: generates the scripted pad for `make joytest`
 - `docs/`: README screenshots, captured in x16emu
-- `levels/`: level sources (the format is documented in `level01.txt`)
+- `levels/`: level sources (the format is documented in `tools/level.py`)
 - `build/`: build output (ignored by git)
 
 ## Reference

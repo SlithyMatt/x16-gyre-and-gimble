@@ -29,10 +29,16 @@ its way home along that path.
 - **Scoring:** a move counter with a par for each level, giving 1–3 stars:
   3 at par, 2 at up to par + ⌊par/2⌋, otherwise 1. Undo subtracts a move.
   The best rating per level is kept for the session (not saved yet).
+- **100 levels, then the ending:** after the last, Return shows "O frabjous
+  day! Callooh! Callay!" over the board with the session's star total
+  (out of 300), the fanfare plays once more, and Return starts again from
+  level 1. The level number sits a row higher than the rest of its panel,
+  so "Level 100" clears the rim.
 
 ## Planned twists (introduced level by level)
 
-1. **Gimbals** *(implemented, levels 2–3)*: neighboring rings geared together. Turning the
+1. **Gimbals** *(implemented: one same-way gimbal from level 5, opposite
+   ones from 13, then pairs and chains)*: neighboring rings geared together. Turning the
    driver also turns the follower, the same way (`+`) or the opposite way
    (`-`), but turning the follower alone leaves the driver still. Gimbals
    can chain (3→2→1). Linked rings grow gear teeth that mesh across the
@@ -252,6 +258,21 @@ The game has to read well on an NTSC composite CRT, not just VGA.
   gimbal links and par.
 - A Python solver (breadth-first search over ring rotations) checks that
   every level can be solved and computes its par.
+- **All 100 levels** come from `tools/genlevels.py` (deterministic for its
+  seed; the files are checked in, so a level can be hand-tuned
+  afterwards). It numbers levels as first generated, after three
+  hand-made levels since removed: `genlevels.py 4 103` writes levels
+  1–100. Each is built around a
+  path from the entry down through every ring to the burrow, wandering
+  along each ring's arc, with decoy tunnels (dead ends and false turnings,
+  never a second entry or burrow door) and gimbals around it. A
+  breadth-first search out from every solved state gives each state's
+  distance, and the start is picked from those exactly at the target
+  par. Boards where decoys let too many states solve are thrown away.
+- **Difficulty ramp:** par climbs from 4 to 14 by level 97 and holds there;
+  the arcs, the number and length of decoys, and the gimbals grow with it.
+  Levels 8, 18, 28, … are breathers (par 2 lower), and the theme (and its
+  music) changes at each of them.
 
 ## Build
 

@@ -25,7 +25,7 @@ W, H = 320, 240
 
 # HUD text blocks as character cells (col0, row0, col1, row1), inclusive.
 # Keep in step with draw_hud and draw_status in src/main.asm.
-PANELS = ((4, 3, 11, 8), (27, 3, 35, 8), (4, 23, 11, 26), (28, 24, 35, 26))
+PANELS = ((4, 3, 12, 7), (27, 3, 35, 8), (4, 23, 11, 26), (28, 24, 35, 26))
 PAD = 3             # paving beyond the text
 CORNER = 3          # paving corner radius
 KERB = 2

@@ -8,6 +8,24 @@ Usage:
 
 Connectivity here must match `flood` in src/main.asm, and gimbal handling
 must match `turn_sel`.
+
+Level file format (# starts a comment):
+
+  ring3: oc c  i  .  .  .  oi .  .  c  oc i
+  ring2: ...                  rings outer (ring3) to inner (ring0), 12 cells
+  ring1: ...                  each, position 0 at the top, going clockwise
+  ring0: ...
+  gimbal: 3 > 2 +             optional, repeatable: turning DRIVER (3) also
+                              turns its neighbor FOLLOWER (2) the same (+)
+                              or opposite (-) way; not the other way round
+  start: 3 8 8 3              starting rotation of each ring, outer to inner,
+                              in clockwise steps
+  theme: noon                 optional color theme (and music) from
+                              assets/themes.txt (default: the first)
+
+Cells: . stone, - tunnel with no openings, or a tunnel opening any of
+i (inward), o (outward) and c (clockwise), e.g. "oc". The entry gap is
+above ring3 position 0; the burrow is inside ring0.
 """
 import random
 import sys

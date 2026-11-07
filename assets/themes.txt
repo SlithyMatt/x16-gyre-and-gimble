@@ -9,6 +9,12 @@
 #
 # Composite TV: tunnel < wall < stone < sel < lit must step up in luma by
 # at least 1.5 each (the build checks), so the board reads in black and white.
+#
+# The garden around the board (tools/garden.py) has its own materials, each
+# shaded from shadow to highlight: grass, hedge, four flowers (bloom1-4),
+# paving under the text, the kerb around it, soil in the flower beds and the
+# gravel path to the entry. Paving luma must be at most 3, under white text,
+# and grass luma at least 1.5 from both paving and stone.
 
 theme noon              # sandstone and slate in daylight
 stone    9  8  6
@@ -20,6 +26,16 @@ lit     15 14  4
 wall     4  5  6
 burrow   1  5  2
 home    15 15 13
+grass    3  6  2
+hedge    2  5  2
+bloom1  13  3  4        # roses
+bloom2  14  9 11
+bloom3  15 12  3
+bloom4  11  9 14
+paving   2  2  3
+kerb     8  8  7
+soil     5  3  2
+path     8  7  5
 
 theme brillig           # four o'clock in the afternoon: warmer, lower sun
 stone   10  7  4
@@ -31,6 +47,16 @@ lit     15 13  3
 wall     5  4  5
 burrow   2  5  2
 home    15 14 11
+grass    5  6  2
+hedge    3  5  1
+bloom1  14  6  2        # marigolds and asters
+bloom2  13  3  5
+bloom3  15 12  3
+bloom4  10  6 13
+paving   3  2  2
+kerb    10  7  5
+soil     5  3  1
+path     9  7  4
 
 theme tulgey            # the tulgey wood: mossy stone in green shade
 stone    7  8  5
@@ -42,3 +68,13 @@ lit     14 14  4
 wall     3  5  4
 burrow   1  6  3
 home    14 15 12
+grass    2  5  3
+hedge    2  7  3
+bloom1   6  7 14        # bluebells and foxgloves
+bloom2  12  6 12
+bloom3  13 13 11
+bloom4  13  4  2
+paving   1  2  2
+kerb     6  7  6
+soil     3  2  1
+path     6  6  4

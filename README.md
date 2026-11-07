@@ -24,7 +24,7 @@ The game loads `RINGS.BIN` and `CELLS.BIN` from the current device, so keep them
 
 ## Gameplay
 
-<img src="docs/level1.png" width="400" alt="Level 1 at the start: four rings of stone and tunnel around the burrow, the tove waiting at the gap in the rim">
+<img src="docs/level1.png" width="400" alt="Level 1 at the start: four rings of stone and tunnel around the burrow, set in a garden, the tove waiting at the gap in the rim">
 
 Turn the rings until a tunnel runs from the gap in the outer rim to the
 burrow at the center. The notches in each cell's walls show where its
@@ -33,7 +33,8 @@ tunnel opens.
 <img src="docs/walk.png" width="400" alt="Level 1 solved: the connected tunnel glows yellow and the tove walks along it">
 
 When the path connects, it lights up and the tove walks home along it
-(Return or A skips the walk).
+(Return or A skips the walk). Borogoves and mome raths wander the garden,
+and celebrate when the tove is home.
 
 <img src="docs/gimbal.png" width="400" alt="Level 2: the outer ring is selected and the ring inside it, meshed by gear teeth, is tinted blue">
 
@@ -67,13 +68,15 @@ Any SNES controller in ports 1–4 works, and a held D-pad direction repeats.
 - `src/`: 65C02 assembly (`main.asm` is the entry point)
 - `tools/genrings.py`: renders the board backdrop and the anti-aliased,
   beveled cell pieces the game draws from
+- `tools/garden.py`: renders the garden around the board (lawn, hedged
+  text panels, flower beds) and the critters' wandering bands
 - `tools/shading.py`, `tools/genthemes.py`: the shading model, and the
   per-level color themes (`assets/themes.txt`) built from it
 - `tools/level.py`: compiles the levels, checks that each is solvable and
   computes par. `suggest LEVEL N` finds starting rotations with par N, and
   `keys LEVEL` prints a shortest solution as keystrokes.
-- `tools/gensprites.py`: compiles text sprite sheets (`assets/tove.txt`)
-  into sprite frames and palette
+- `tools/gensprites.py`: compiles text sprite sheets (`assets/tove.txt`,
+  `assets/critters.txt`) into sprite frames and palette
 - `tools/genchars.py`: compiles text glyphs (`assets/stars.txt`) into
   charset characters
 - `assets/`: sprite and glyph art, as editable text grids

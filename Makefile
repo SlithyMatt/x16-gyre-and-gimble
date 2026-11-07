@@ -9,7 +9,7 @@ PRG     := $(BUILD)/$(NAME).PRG
 BOARD   := $(BUILD)/RINGS.BIN $(BUILD)/CELLS.BIN
 SOURCES := $(wildcard src/*.asm src/*.inc)
 GEN_INC := $(BUILD)/board.inc $(BUILD)/pieces.inc $(BUILD)/waypoints.inc $(BUILD)/level.inc \
-           $(BUILD)/tove.inc $(BUILD)/stars.inc $(BUILD)/themes.inc
+           $(BUILD)/tove.inc $(BUILD)/critters.inc $(BUILD)/stars.inc $(BUILD)/themes.inc
 
 .PHONY: all run clean joytest
 
@@ -23,7 +23,7 @@ $(PRG): $(SOURCES) $(GEN_INC) | $(BUILD)
 
 BOARD_GEN := $(BOARD) $(BUILD)/board.inc $(BUILD)/pieces.inc $(BUILD)/waypoints.inc
 
-$(BOARD_GEN) &: tools/genrings.py tools/shading.py | $(BUILD)
+$(BOARD_GEN) &: tools/genrings.py tools/garden.py tools/shading.py | $(BUILD)
 	$(PYTHON) tools/genrings.py $(BOARD_GEN)
 
 $(BUILD)/themes.inc: tools/genthemes.py tools/shading.py assets/themes.txt | $(BUILD)
@@ -31,6 +31,9 @@ $(BUILD)/themes.inc: tools/genthemes.py tools/shading.py assets/themes.txt | $(B
 
 $(BUILD)/tove.inc: tools/gensprites.py assets/tove.txt | $(BUILD)
 	$(PYTHON) tools/gensprites.py assets/tove.txt tove $@
+
+$(BUILD)/critters.inc: tools/gensprites.py assets/critters.txt | $(BUILD)
+	$(PYTHON) tools/gensprites.py assets/critters.txt critters $@
 
 $(BUILD)/stars.inc: tools/genchars.py assets/stars.txt | $(BUILD)
 	$(PYTHON) tools/genchars.py assets/stars.txt star $@

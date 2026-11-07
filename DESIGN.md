@@ -63,13 +63,25 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
 ## Rendering approach
 
 - **Layer 0:** a 320×240 8bpp bitmap. `RINGS.BIN` is the static backdrop
-  (rim, entry, burrow), loaded straight into VRAM.
+  (garden, rim, entry, burrow), loaded straight into VRAM.
+- **The garden:** the board lies on a mown lawn (broad diagonal stripes,
+  soft mottling, the board's shadow down and to the right). Each block of
+  HUD text sits on dark flagstone paving inside a beveled kerb, bordered by
+  a flowering hedge; where a panel meets the board its kerb follows the rim.
+  Flower beds edge the screen outside the title-safe area, and a gravel
+  path leads in to the entry gap, where the tove waits. `tools/garden.py`
+  renders it into the backdrop, and the panels are placed from the text
+  layout (`PANELS`, kept in step with `draw_hud`/`draw_status`). Every
+  garden pixel is a slot in a material ramp (grass, hedge, four flowers,
+  paving, kerb, soil, path) in palette rows 8–12, so each theme recolors
+  the garden too: roses at noon, marigolds at brillig, bluebells and
+  foxgloves in the tulgey wood.
 - **Shaded cells:** each screen cell owns a *footprint*, its band of the
   ring plus the near half of each wall around it. `tools/genrings.py`
   pre-renders every footprint with 4×4 supersampled anti-aliasing and an
   emboss bevel lit from the top-left, as a base piece plus one overlay
   piece per opening (in, out, clockwise, counter-clockwise). The pieces
-  (`CELLS.BIN`, about 43 KB) load into high RAM banks 1–6 and are copied to
+  (`CELLS.BIN`, about 55 KB) load into high RAM banks 1–7 and are copied to
   VRAM as spans. The game keeps a key per screen cell (class and openings)
   and redraws only cells whose key changed, so a move redraws the turned
   rings and any cell that lit up or went dark.
@@ -84,6 +96,8 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
   | 5 | tunnel |
   | 6 | lit tunnel (reachable from the entry) |
   | 7 | wall and rim (literal) |
+  | 8–12 | the garden (from the theme) |
+  | 13 | the borogove and mome rath sprites |
   | 14 | the tove sprite |
   | 15 | burrow, entry (literal) |
 
@@ -132,6 +146,18 @@ Pad 0 (the keyboard joystick) is skipped so cursor keys don't count twice.
     message appears. Return/A skips the walk; undo or restart cancels it.
   - Ring selection stays a palette highlight (no cursor sprite needed).
     Hazards will be sprites too.
+- **Critters:** two borogoves and two mome raths (sprites 2–5, palette row
+  13, `assets/critters.txt`) wander the lawns either side of the board, at
+  Z-depth 2 under the tove. Each walks to a random waypoint in its band
+  (tables from `tools/genrings.py`, which checks the bands are open lawn),
+  pauses there to peck or sniff, and picks another; mome raths amble at
+  half a borogove's pace. When the tove is home they turn to the board and
+  celebrate: the borogoves fluff up and the mome raths outgrabe. Their
+  frames follow the tove's in VRAM at `$13200`.
+- **VRAM:** the bitmap takes `$00000–$12BFF`, sprite frames start at
+  `$13000` (the tove's and the critters' use 1.5 KB), and the KERNAL's text
+  map and charset sit from `$1B000`. About 30 KB at `$13600–$1AFFF` is
+  free for more sprites.
 - **Later:** smoother rotation by drawing 24 screen positions per ring
   (cells 2 positions wide), which allows a half-step frame.
 
@@ -142,12 +168,16 @@ The game has to read well on an NTSC composite CRT, not just VGA.
 - **Title-safe area:** all text and gameplay graphics stay inside a 10%
   margin, which is x 32–287 and y 24–215 (text columns 4–35, rows 3–26).
   The board's outer edge is at radius 88, and the HUD uses the four 8×4
-  character corners that leaves free. Only background may go outside it.
+  character corners that leaves free. Only background may go outside it:
+  the garden's flower beds, and the edges of the hedges.
 - **Luma contrast:** composite blurs chroma, so every pair of colors that
   must be told apart (open vs. closed gate, stone vs. selected stone,
   reachable vs. unreachable tunnel) differs in brightness, not only hue.
   Every theme must step up tunnel < wall < stone < selected < lit by at
-  least 1.5 luma (of 15); `themes.inc` lists each theme's values. Bevels
+  least 1.5 luma (of 15); `themes.inc` lists each theme's values. The
+  paving under the text is at most luma 3, and the lawn sits at least 1.5
+  from both the paving and the stone, so the board stands out from it.
+  The lawn's texture is broad and low in contrast. Bevels
   and anti-aliasing stay within a class's own hue, so they don't add
   chroma detail.
 - **No fine detail:** lines and gates are at least 3 px wide at 320×240,

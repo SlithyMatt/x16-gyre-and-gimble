@@ -25,6 +25,8 @@ ROW_LIT = 6
 ROW_WALL = 7            # literal: walls and the rim
 ROW_FIXED = 15          # literal: burrow, entry
 ROW_TOVE = 14           # the tove sprite's palette offset
+ROW_GARDEN = 8          # rows 8-12: the garden around the board (tools/garden.py)
+ROW_CRITTER = 13        # the borogove and mome rath sprites' palette offset
 
 CLASS_ROWS = range(1, 7)
 assert all((r << 4) | 0x70 == 0x70 for r in CLASS_ROWS)  # OR can't touch row 7
@@ -64,12 +66,28 @@ STYLE = {
     "burrow": (0.6, False), "home": (0.4, False),
 }
 
-CLASSES = ("stone", "sel", "follow", "counter", "tunnel", "lit", "wall",
-           "burrow", "home")
+BOARD_CLASSES = ("stone", "sel", "follow", "counter", "tunnel", "lit", "wall",
+                 "burrow", "home")
+
+# The garden: each material is a ramp from shadow to highlight. Rows from
+# ROW_GARDEN, as (material, first slot, slots)
+GARDEN_LAYOUT = (
+    ("grass", 0, 16), ("hedge", 16, 16),
+    ("bloom1", 32, 4), ("bloom2", 36, 4), ("bloom3", 40, 4), ("bloom4", 44, 4),
+    ("paving", 48, 8), ("kerb", 56, 8),
+    ("soil", 64, 8), ("path", 72, 8),
+)
+GARDEN_SLOTS = 80
+GARDEN_CLASSES = tuple(name for name, _, _ in GARDEN_LAYOUT)
+
+CLASSES = BOARD_CLASSES + GARDEN_CLASSES
 
 # Composite video: these must get brighter in this order (luma, 0-15)
 LUMA_ORDER = ("tunnel", "wall", "stone", "sel", "lit")
 LUMA_GAP = 1.5
+# White text and the gray (unearned) stars sit on the paving; the lawn sits
+# between the paving and the board's stone
+PAVING_MAX = 3.0
 
 
 def luma(c):
@@ -134,7 +152,32 @@ def parse_themes(path):
             raise SystemExit(f"{path}: theme {name}: {' < '.join(LUMA_ORDER)} "
                              f"need luma gaps of {LUMA_GAP} (have "
                              f"{', '.join(f'{v:.1f}' for v in lumas)})")
+        g = luma(t["grass"])
+        if luma(t["paving"]) > PAVING_MAX:
+            raise SystemExit(f"{path}: theme {name}: paving luma must be at most {PAVING_MAX}")
+        if not luma(t["paving"]) + LUMA_GAP <= g <= luma(t["stone"]) - LUMA_GAP:
+            raise SystemExit(f"{path}: theme {name}: grass luma {g:.1f} must sit "
+                             f"{LUMA_GAP} from both paving and stone")
     return themes
+
+
+def garden_ramp(c, n):
+    """n shades of c, from shadow (slot 0) to highlight."""
+    out = []
+    for s in range(n):
+        b = -1 + 2 * s / (n - 1)
+        out.append(mix(c, (0, 0, 0), 1 + 0.65 * b) if b < 0 else mix(c, (15, 15, 15), 1 - 0.4 * b))
+    return [clamp(v) for v in out]
+
+
+def build_garden(t):
+    """The theme's garden palette, GARDEN_SLOTS (r, g, b) entries from ROW_GARDEN."""
+    out = []
+    for name, first, n in GARDEN_LAYOUT:
+        assert first == len(out)
+        out += garden_ramp(t[name], n)
+    assert len(out) == GARDEN_SLOTS <= 16 * (ROW_CRITTER - ROW_GARDEN)
+    return out
 
 
 def build_theme(t):

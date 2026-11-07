@@ -3,7 +3,8 @@
 
 Each theme is TH_SIZE bytes of VERA palette entries (GB, R byte pairs) at
 the TH_* offsets: a 16-entry ramp for each cell class, then the wall row,
-burrow, home and entry entries (see tools/shading.py).
+burrow, home and entry entries (see tools/shading.py). Each theme also has
+GARDEN_SIZE bytes of garden palette, for palette rows from ROW_GARDEN.
 
 Usage: genthemes.py THEMES.txt OUT.inc
 """
@@ -32,6 +33,9 @@ def main():
         f.write(f"TH_SIZE = {off}\nNTHEMES = {len(themes)}\n")
         f.write("theme_lo:\n    .byte " + ", ".join(f"<theme_{n}" for n in themes) + "\n")
         f.write("theme_hi:\n    .byte " + ", ".join(f">theme_{n}" for n in themes) + "\n")
+        f.write(f"GARDEN_SIZE = {2 * shading.GARDEN_SLOTS}\n")
+        f.write("garden_lo:\n    .byte " + ", ".join(f"<garden_{n}" for n in themes) + "\n")
+        f.write("garden_hi:\n    .byte " + ", ".join(f">garden_{n}" for n in themes) + "\n")
         for tname, t in themes.items():
             data = shading.build_theme(t)
             lumas = ", ".join(f"{c} {shading.luma(t[c]):.1f}" for c in shading.LUMA_ORDER)
@@ -42,6 +46,13 @@ def main():
                 for k in range(0, n, 8):
                     f.write("    .byte " + ", ".join(f"${g << 4 | b:02x}, ${r:02x}"
                                                      for r, g, b in entries[k:k + 8]) + "\n")
+            f.write(f"garden_{tname}:\n")
+            garden = shading.build_garden(t)
+            for name, first, n in shading.GARDEN_LAYOUT:
+                f.write(f"    ; {name}\n")
+                for k in range(first, first + n, 8):
+                    f.write("    .byte " + ", ".join(f"${g << 4 | b:02x}, ${r:02x}"
+                                                     for r, g, b in garden[k:min(k + 8, first + n)]) + "\n")
 
 
 if __name__ == "__main__":

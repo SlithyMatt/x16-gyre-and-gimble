@@ -16,6 +16,17 @@ TOVE_Z          = 2 << 2        ; Z-depth 2: over the board, under the HUD text
 WALK_STEPS      = 8             ; frames per waypoint segment (make_step assumes 8)
 VRAM_SPRITES    = $1FC00
 
+; Garden critters: borogoves and mome raths (see assets/critters.txt)
+CRITTER_SPRITE  = 2             ; sprites 2-5, under the tove
+NCRITTERS       = 4
+CRITTER_VRAM    = TOVE_VRAM + TOVE_FRAMES * 128
+CRITTER_PAL     = ROW_CRITTER
+BOROGOVE        = 0             ; first frame of each kind
+RATH            = 4
+POSE_WALK       = 0             ; walk A, then walk B
+POSE_IDLE       = 2             ; peck or sniff
+POSE_CHEER      = 3             ; fluff or outgrabe
+
 ; Cell bits (match tools/level.py)
 IN              = $01
 OUT             = $02
@@ -86,6 +97,7 @@ JOY_DPAD        = $0f           ; byte 0: UP DN LT RT
 .include "themes.inc"
 .include "pieces.inc"
 .include "stars.inc"
+.include "critters.inc"
 
 .import __BSS_RUN__, __BSS_SIZE__
 
@@ -120,6 +132,7 @@ start:
     jmp quit
 @go:
     jsr init_tove               ; all other state starts at zero (clear_bss)
+    jsr init_critters
     jsr reset_level
     ; fall through
 
@@ -141,11 +154,18 @@ main_loop:
     sta last_jiffy
     jsr poll_joy
     jsr tick_tove
+    jsr tick_critters
     bra main_loop
 
 quit:
-    stz tove_z                  ; hide the tove before handing back to BASIC
+    stz tove_z                  ; hide the sprites before handing back to BASIC
     jsr set_tove
+    stz critter_z
+    ldx #NCRITTERS-1
+:   lda #0
+    jsr set_critter
+    dex
+    bpl :-
     lda saved_mode
     clc
     jsr SCREEN_MODE
@@ -688,6 +708,262 @@ arrive:
     jsr update_palette
     jmp draw_status
 
+;
+; The critters
+;
+; Borogoves and mome raths wander the lawns either side of the board. Each
+; walks to a random waypoint in its band (tables from tools/genrings.py),
+; pauses there to peck or sniff, then picks another. When the wabe is clear
+; (the tove is home) they turn to the board and celebrate.
+
+; Copy the critters' frames and palette to VRAM and place them
+init_critters:
+    stz VERA_CTRL
+    lda #<CRITTER_VRAM
+    sta VERA_ADDR_L
+    lda #>CRITTER_VRAM
+    sta VERA_ADDR_M
+    lda #^CRITTER_VRAM | VERA_INC_1
+    sta VERA_ADDR_H
+    lda #<critters_frames
+    sta ZP_PTR
+    lda #>critters_frames
+    sta ZP_PTR+1
+    ldx #CRITTERS_FRAMES / 2    ; 128 bytes per frame: 256 per pass
+    ldy #0
+:   lda (ZP_PTR),y
+    sta VERA_DATA0
+    iny
+    bne :-
+    inc ZP_PTR+1
+    dex
+    bne :-
+    lda #<(VRAM_PALETTE + (CRITTER_PAL * 16 + 1) * 2)
+    sta VERA_ADDR_L
+    lda #>(VRAM_PALETTE + (CRITTER_PAL * 16 + 1) * 2)
+    sta VERA_ADDR_M
+    lda #^(VRAM_PALETTE + (CRITTER_PAL * 16 + 1) * 2) | VERA_INC_1
+    sta VERA_ADDR_H
+    ldx #0
+:   lda critters_pal,x
+    sta VERA_DATA0
+    inx
+    cpx #critters_frames - critters_pal
+    bne :-
+    jsr RDTIM                   ; seed the wandering (never zero)
+    ora #1
+    sta seed
+    lda #TOVE_Z
+    sta critter_z
+    ldx #NCRITTERS-1
+:   lda cr_start,x              ; start paused at a waypoint
+    jsr waypoint
+    lda cr_x,x
+    sta cr_tx,x
+    lda cr_y,x
+    sta cr_ty,x
+    lda cr_start,x
+    asl a
+    asl a
+    asl a
+    sta cr_timer,x              ; staggered
+    stz cr_walk,x
+    dex
+    bpl :-
+    rts
+
+; Once per frame: move, animate and draw every critter
+tick_critters:
+    ldx #NCRITTERS-1
+@each:
+    lda arrived
+    beq @live
+    lda cr_band,x               ; cheer, facing the board
+    sta cr_flip,x
+    lda anim
+    and #$10
+    beq @pose
+    lda #POSE_CHEER
+    bra @pose
+@live:
+    lda cr_walk,x
+    beq @pause
+    lda anim
+    and cr_pace,x
+    bne @walk_pose
+    lda cr_x,x                  ; a step toward the waypoint
+    cmp cr_tx,x
+    beq @y
+    bcc @right
+    dec cr_x,x
+    lda #1
+    sta cr_flip,x
+    bra @y
+@right:
+    inc cr_x,x
+    stz cr_flip,x
+@y:
+    lda cr_y,x
+    cmp cr_ty,x
+    beq @arrived
+    bcc @down
+    dec cr_y,x
+    bra @walk_pose
+@down:
+    inc cr_y,x
+    bra @walk_pose
+@arrived:
+    lda cr_x,x
+    cmp cr_tx,x
+    bne @walk_pose
+    stz cr_walk,x               ; there: pause for 40-167 frames
+    jsr random
+    and #$7f
+    clc
+    adc #40
+    sta cr_timer,x
+@walk_pose:
+    lda anim                    ; walk cycle: 8 jiffies a step
+    lsr a
+    lsr a
+    lsr a
+    and #1
+    bra @pose
+@pause:
+    dec cr_timer,x
+    bne @idle
+    jsr random                  ; off to another waypoint
+    and #CRITTER_TARGETS-1
+    jsr target
+    lda #1
+    sta cr_walk,x
+    lda #POSE_WALK
+    bra @pose
+@idle:
+    lda cr_timer,x              ; peck or sniff now and then
+    and #$20
+    beq @pose
+    lda #POSE_IDLE
+@pose:
+    clc
+    adc cr_kind,x
+    jsr set_critter
+    dex
+    bmi :+
+    jmp @each
+:   rts
+
+; Put critter X at waypoint A of its band
+waypoint:
+    jsr band_target
+    lda band_tx,y
+    sta cr_x,x
+    lda band_ty,y
+    sta cr_y,x
+    rts
+
+; Head critter X for waypoint A of its band
+target:
+    jsr band_target
+    lda band_tx,y
+    sta cr_tx,x
+    lda band_ty,y
+    sta cr_ty,x
+    rts
+
+; Y = index of waypoint A in critter X's band
+band_target:
+    sta tmp_n
+    lda cr_band,x
+.repeat 4
+    asl a
+.endrepeat
+    ora tmp_n
+    tay
+    rts
+
+.assert CRITTER_TARGETS = 16, error, "band_target assumes 16 waypoints"
+
+; Write critter X's sprite attributes, showing frame A. Preserves X.
+set_critter:
+    asl a                       ; 128-byte frames = 4 address units of 32
+    asl a
+    clc
+    adc #<(CRITTER_VRAM >> 5)
+    pha
+    stz VERA_CTRL
+    txa
+    asl a
+    asl a
+    asl a
+    adc #<(VRAM_SPRITES + CRITTER_SPRITE * 8)
+    sta VERA_ADDR_L
+    lda #>(VRAM_SPRITES + CRITTER_SPRITE * 8)
+    sta VERA_ADDR_M
+    lda #^(VRAM_SPRITES + CRITTER_SPRITE * 8) | VERA_INC_1
+    sta VERA_ADDR_H
+    pla
+    sta VERA_DATA0
+    lda #>(CRITTER_VRAM >> 5)   ; address bits 16:13, mode 0 = 4bpp
+    sta VERA_DATA0
+    lda cr_band,x               ; the band's screen x, plus the critter's
+    asl a
+    tay
+    lda cr_x,x
+    clc
+    adc band_x,y
+    sta VERA_DATA0
+    lda band_x+1,y
+    adc #0
+    sta VERA_DATA0
+    lda cr_y,x
+    sta VERA_DATA0
+    stz VERA_DATA0
+    lda critter_z
+    ora cr_flip,x
+    sta VERA_DATA0
+    lda #%01010000 | CRITTER_PAL ; 16x16
+    sta VERA_DATA0
+    rts
+
+.assert <(CRITTER_VRAM >> 5) + (CRITTERS_FRAMES - 1) * 4 < 256, error, "critter frames cross a page"
+.assert <(VRAM_SPRITES + (CRITTER_SPRITE + NCRITTERS) * 8) > <(VRAM_SPRITES + CRITTER_SPRITE * 8), error, "critter sprites cross a page"
+
+; A = a pseudo-random byte (16-bit Galois LFSR). Preserves X.
+random:
+    ldy #8
+    lda seed
+:   asl a
+    rol seed+1
+    bcc :+
+    eor #$39
+:   dey
+    bne :--
+    sta seed
+    rts
+
+; Load the level theme's garden colors into the palette rows from ROW_GARDEN
+load_garden:
+    ldx lvl+LV_THEME
+    lda garden_lo,x
+    sta ZP_PTR
+    lda garden_hi,x
+    sta ZP_PTR+1
+    stz VERA_CTRL
+    lda #<(VRAM_PALETTE + ROW_GARDEN * PALETTE_ROW)
+    sta VERA_ADDR_L
+    lda #>(VRAM_PALETTE + ROW_GARDEN * PALETTE_ROW)
+    sta VERA_ADDR_M
+    lda #^(VRAM_PALETTE + ROW_GARDEN * PALETTE_ROW) | VERA_INC_1
+    sta VERA_ADDR_H
+    ldy #0
+:   lda (ZP_PTR),y
+    sta VERA_DATA0
+    iny
+    cpy #GARDEN_SIZE
+    bne :-
+    rts
+
 ; A = stars (1-3) earned by solving the level in `moves`
 rate:
     lda lvl+LV_PAR
@@ -798,6 +1074,7 @@ reset_level:
     sta ZP_THEME
     lda theme_hi,x
     sta ZP_THEME+1
+    jsr load_garden
     lda #$ff                    ; nothing drawn yet: draw every cell
     ldx #NCELLS-1
 :   sta drawn,x
@@ -1459,6 +1736,13 @@ joy_keys1:      ; A, X, L, R
 ring_base:
     .byte 0, CELLS, 2*CELLS, 3*CELLS
 
+; Each critter: its kind, band (0 left, 1 right), frames per step - 1
+; (a mask of anim) and starting waypoint
+cr_kind:        .byte BOROGOVE, RATH, RATH, BOROGOVE
+cr_band:        .byte 0, 0, 1, 1
+cr_pace:        .byte 1, 3, 3, 1
+cr_start:       .byte 3, 9, 5, 12
+
 ring_of:
 .repeat NCELLS, i
     .byte i / CELLS
@@ -1514,6 +1798,15 @@ s_load_failed:  .byte "Can't load RINGS.BIN or CELLS.BIN", 0
 .segment "BSS"
 
 saved_mode:     .res 1
+seed:           .res 2
+critter_z:      .res 1
+cr_x:           .res NCRITTERS      ; sprite corner, x relative to the band
+cr_y:           .res NCRITTERS
+cr_tx:          .res NCRITTERS      ; waypoint
+cr_ty:          .res NCRITTERS
+cr_walk:        .res NCRITTERS      ; walking (else paused)
+cr_timer:       .res NCRITTERS
+cr_flip:        .res NCRITTERS
 parent:         .res NCELLS
 queue:          .res NCELLS
 q_head:         .res 1
